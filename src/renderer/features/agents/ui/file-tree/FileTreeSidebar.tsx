@@ -1,10 +1,9 @@
 "use client"
 
 import { useAtom } from "jotai"
-import { ChevronsDownUp, RefreshCw } from "lucide-react"
 import { useCallback, useMemo } from "react"
 import { Button } from "../../../../components/ui/button"
-import { IconDoubleChevronRight } from "../../../../components/ui/icons"
+import { IconDoubleChevronLeft } from "../../../../components/ui/icons"
 import { Kbd } from "../../../../components/ui/kbd"
 import {
   Tooltip,
@@ -38,7 +37,6 @@ export function FileTreeSidebar({
     data: entries = [],
     isLoading,
     refetch,
-    isRefetching,
   } = trpc.files.listAll.useQuery(
     { projectPath: projectPath || "" },
     {
@@ -104,17 +102,6 @@ export function FileTreeSidebar({
     [expandedFolders, setExpandedFolders],
   )
 
-  // Collapse all folders
-  const handleCollapseAll = useCallback(() => {
-    setExpandedFolders(new Set<string>())
-  }, [setExpandedFolders])
-
-  // Refresh file list
-  const handleRefresh = useCallback(() => {
-    refetch()
-    refetchGitStatus()
-  }, [refetch, refetchGitStatus])
-
   return (
     <div className="flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header */}
@@ -122,60 +109,24 @@ export function FileTreeSidebar({
         <span className="text-xs font-medium text-foreground truncate pl-0.5">
           Files
         </span>
-        <div className="flex items-center gap-0.5">
-          {/* Refresh button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRefresh}
-                disabled={isRefetching}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Refresh</TooltipContent>
-          </Tooltip>
-
-          {/* Collapse all button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleCollapseAll}
-                disabled={expandedFolders.size === 0}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md disabled:opacity-50"
-              >
-                <ChevronsDownUp className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Collapse all</TooltipContent>
-          </Tooltip>
-
-          {/* Close button */}
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onClose}
-                className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
-                aria-label="Close file tree"
-              >
-                <IconDoubleChevronRight className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Close file tree
-              <Kbd>⌘B</Kbd>
-            </TooltipContent>
-          </Tooltip>
-        </div>
+        {/* Close button */}
+        <Tooltip delayDuration={500}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-6 w-6 p-0 hover:bg-foreground/10 transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] text-foreground flex-shrink-0 rounded-md"
+              aria-label="Close file tree"
+            >
+              <IconDoubleChevronLeft className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Close file tree
+            <Kbd>⌘B</Kbd>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Content */}
