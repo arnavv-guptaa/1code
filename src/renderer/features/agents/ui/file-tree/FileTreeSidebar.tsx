@@ -1,7 +1,7 @@
 "use client"
 
 import { useAtom } from "jotai"
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useState, useEffect, useRef } from "react"
 import { Button } from "../../../../components/ui/button"
 import { IconDoubleChevronLeft } from "../../../../components/ui/icons"
 import { Kbd } from "../../../../components/ui/kbd"
@@ -14,6 +14,8 @@ import { trpc } from "../../../../lib/trpc"
 import { expandedFoldersAtomFamily } from "../../atoms"
 import { buildFileTree, countFiles, countFolders } from "./build-file-tree"
 import { FileTreeNode, type GitStatusMap } from "./FileTreeNode"
+import { Download } from "lucide-react"
+import { toast } from "sonner"
 
 interface FileTreeSidebarProps {
   projectPath: string | undefined
@@ -38,6 +40,11 @@ export function FileTreeSidebar({
   const [expandedFolders, setExpandedFolders] = useAtom(
     expandedFoldersAtomFamily(projectId),
   )
+
+  // Drag and drop state
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
 
   // Fetch all files from project
   const {
@@ -109,8 +116,197 @@ export function FileTreeSidebar({
     [expandedFolders, setExpandedFolders],
   )
 
+  // Import files mutation
+  const importFilesMutation = trpc.files.importFiles.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success(`Imported ${result.imported} of ${result.total} file${result.total !== 1 ? "s" : ""}`)
+        // File watcher will automatically refresh the tree
+      } else {
+        toast.error("Failed to import files")
+      }
+    },
+    onError: (error) => {
+      toast.error(`Import failed: ${error.message}`)
+    },
+  })
+
+  // Import files to a target directory
+  const importFilesToDir = useCallback(
+    async (targetDir: string, filePaths: string[]) => {
+      if (!projectPath) {
+        toast.error("No project selected")
+        return
+      }
+
+      setIsImporting(true)
+      setDropTargetPath(null)
+      try {
+        await importFilesMutation.mutateAsync({
+          sourcePaths: filePaths,
+          targetDir,
+        })
+      } finally {
+        setIsImporting(false)
+      }
+    },
+    [projectPath, importFilesMutation]
+  )
+
+  // Folder-level drag handlers (passed to FileTreeNode)
+  const handleDragEnterFolder = useCallback((folderPath: string) => {
+    setDropTargetPath(folderPath)
+    setIsDragOver(false) // Hide root drop zone when over a folder
+  }, [])
+
+  const handleDragLeaveFolder = useCallback(() => {
+    setDropTargetPath(null)
+  }, [])
+
+  const handleDropOnFolder = useCallback(
+    (targetDir: string, filePaths: string[]) => {
+      console.log("[FileTreeSidebar] handleDropOnFolder called:", { targetDir, filePaths, projectPath })
+      if (!projectPath) return
+      // targetDir from FileTreeNode is a relative path, convert to absolute
+      const absoluteTargetDir = targetDir.startsWith("/")
+        ? targetDir
+        : `${projectPath}/${targetDir}`
+      console.log("[FileTreeSidebar] Importing to:", absoluteTargetDir)
+      importFilesToDir(absoluteTargetDir, filePaths)
+    },
+    [importFilesToDir, projectPath]
+  )
+
+  // Root container drag handlers (for dropping on empty area = project root)
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only show root drop zone if not hovering over a specific folder
+    if (e.dataTransfer.types.includes("Files") && !dropTargetPath) {
+      setIsDragOver(true)
+    }
+  }, [dropTargetPath])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set false if we're leaving the container (not entering a child)
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDragOver(false)
+      setDropTargetPath(null)
+    }
+  }, [])
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      console.log("[FileTreeSidebar] Container handleDrop, dropTargetPath:", dropTargetPath)
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      // If a folder is being targeted, the folder's onDrop should have already handled it
+      // But if we get here with a dropTargetPath, something went wrong - handle it here as fallback
+      if (dropTargetPath) {
+        console.log("[FileTreeSidebar] Folder was targeted, handling drop for folder:", dropTargetPath)
+        const files = Array.from(e.dataTransfer.files)
+        if (files.length > 0) {
+          const filePaths = files
+            .map((file) => window.webUtils?.getPathForFile?.(file))
+            .filter((p): p is string => !!p)
+
+          if (filePaths.length > 0 && projectPath) {
+            const absoluteTargetDir = dropTargetPath.startsWith("/")
+              ? dropTargetPath
+              : `${projectPath}/${dropTargetPath}`
+            importFilesToDir(absoluteTargetDir, filePaths)
+          }
+        }
+        setIsDragOver(false)
+        setDropTargetPath(null)
+        return
+      }
+
+      setIsDragOver(false)
+      setDropTargetPath(null)
+
+      if (!projectPath) {
+        toast.error("No project selected")
+        return
+      }
+
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length === 0) return
+
+      // Get file paths using Electron's webUtils API
+      const filePaths = files
+        .map((file) => window.webUtils?.getPathForFile?.(file))
+        .filter((p): p is string => !!p)
+
+      if (filePaths.length === 0) {
+        toast.error("Could not get file paths. Make sure you're dragging files from your file system.")
+        return
+      }
+
+      // Import to project root
+      importFilesToDir(projectPath, filePaths)
+    },
+    [projectPath, importFilesToDir, dropTargetPath]
+  )
+
+  // Container ref for focus management
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Handle paste events for file import
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      if (!projectPath) return
+
+      const files = e.clipboardData?.files
+      if (!files || files.length === 0) return
+
+      // Get file paths using Electron's webUtils API
+      const filePaths = Array.from(files)
+        .map((file) => window.webUtils?.getPathForFile?.(file))
+        .filter((p): p is string => !!p)
+
+      if (filePaths.length > 0) {
+        e.preventDefault()
+        importFilesToDir(projectPath, filePaths)
+      }
+    },
+    [projectPath, importFilesToDir]
+  )
+
+  // Listen for paste events when the file tree is focused or hovered
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    // We need to use the document-level paste handler because
+    // paste events only fire on editable elements or document
+    const handleDocumentPaste = (e: ClipboardEvent) => {
+      // Only handle if the file tree container is focused or contains the active element
+      if (
+        container.contains(document.activeElement) ||
+        container.matches(":hover")
+      ) {
+        handlePaste(e)
+      }
+    }
+
+    document.addEventListener("paste", handleDocumentPaste)
+    return () => document.removeEventListener("paste", handleDocumentPaste)
+  }, [handlePaste])
+
   return (
-    <div className="flex flex-col h-full min-w-0 overflow-hidden">
+    <div
+      ref={containerRef}
+      className="flex flex-col h-full min-w-0 overflow-hidden"
+      tabIndex={0} // Make focusable for paste events
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-1 px-2 py-1.5 flex-shrink-0">
         <span className="text-xs font-medium text-foreground truncate pl-0.5">
@@ -136,8 +332,37 @@ export function FileTreeSidebar({
         </Tooltip>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
+      {/* Content with drag-and-drop */}
+      <div
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1 relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drop overlay - for project root */}
+        {isDragOver && !dropTargetPath && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-primary/10 border-2 border-dashed border-primary rounded-md m-1 pointer-events-none">
+            <Download className="h-8 w-8 text-primary mb-2" />
+            <span className="text-sm font-medium text-primary">Drop files here</span>
+            <span className="text-xs text-muted-foreground mt-1">Files will be copied to project root</span>
+          </div>
+        )}
+
+        {/* Drop indicator for specific folder */}
+        {dropTargetPath && (
+          <div className="absolute bottom-0 left-0 right-0 z-40 px-3 py-1.5 bg-primary/90 text-primary-foreground text-xs font-medium pointer-events-none">
+            Drop into: {dropTargetPath.split("/").pop()}
+          </div>
+        )}
+
+        {/* Importing overlay */}
+        {isImporting && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 pointer-events-none">
+            <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mb-2" />
+            <span className="text-sm text-muted-foreground">Importing files...</span>
+          </div>
+        )}
+
         {!projectPath ? (
           <div className="px-3 py-4 text-xs text-muted-foreground text-center">
             No project selected
@@ -147,8 +372,9 @@ export function FileTreeSidebar({
             Loading files...
           </div>
         ) : tree.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-            No files found
+          <div className="px-3 py-4 text-xs text-muted-foreground text-center flex flex-col items-center gap-2">
+            <span>No files found</span>
+            <span className="text-[10px]">Drag & drop or paste (⌘V) files here</span>
           </div>
         ) : (
           tree.map((node) => (
@@ -163,6 +389,10 @@ export function FileTreeSidebar({
               onSelectFile={onSelectFile}
               gitStatus={gitStatus as GitStatusMap}
               projectPath={projectPath}
+              onDropFiles={handleDropOnFolder}
+              dropTargetPath={dropTargetPath}
+              onDragEnterFolder={handleDragEnterFolder}
+              onDragLeaveFolder={handleDragLeaveFolder}
             />
           ))
         )}

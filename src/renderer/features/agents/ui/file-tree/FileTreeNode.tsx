@@ -1,7 +1,7 @@
 "use client"
 
 import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Database, FileBox, Table2, ArrowRight } from "lucide-react"
-import { memo, useCallback, useMemo } from "react"
+import { memo, useCallback, useMemo, useState } from "react"
 import { cn } from "../../../../lib/utils"
 import type { TreeNode } from "./build-file-tree"
 import {
@@ -88,6 +88,14 @@ interface FileTreeNodeProps {
   gitStatus?: GitStatusMap
   /** Absolute path to project root (for context menu actions) */
   projectPath?: string
+  /** Called when files are dropped onto a folder */
+  onDropFiles?: (targetDir: string, filePaths: string[]) => void
+  /** Currently active drop target folder path */
+  dropTargetPath?: string | null
+  /** Called when drag enters a folder */
+  onDragEnterFolder?: (folderPath: string) => void
+  /** Called when drag leaves a folder */
+  onDragLeaveFolder?: () => void
 }
 
 export const FileTreeNode = memo(function FileTreeNode({
@@ -100,9 +108,14 @@ export const FileTreeNode = memo(function FileTreeNode({
   onSelectFile,
   gitStatus = {},
   projectPath,
+  onDropFiles,
+  dropTargetPath,
+  onDragEnterFolder,
+  onDragLeaveFolder,
 }: FileTreeNodeProps) {
   const isExpanded = node.type === "folder" && expandedFolders.has(node.path)
   const hasChildren = node.type === "folder" && node.children.length > 0
+  const isDropTarget = node.type === "folder" && dropTargetPath === node.path
 
   // Get git status for this file
   const fileStatus = gitStatus[node.path]
@@ -136,6 +149,68 @@ export const FileTreeNode = memo(function FileTreeNode({
     }
   }, [node.type, node.path, node.name, onToggleFolder, onSelectDataFile, onSelectSourceFile, onSelectFile])
 
+  // Drag and drop handlers for folders
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (node.type !== "folder") return
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types.includes("Files")) {
+      onDragEnterFolder?.(node.path)
+    }
+  }, [node.type, node.path, onDragEnterFolder])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (node.type !== "folder") return
+    e.preventDefault()
+    e.stopPropagation()
+    // Keep the drop target active while dragging over
+    if (e.dataTransfer.types.includes("Files")) {
+      e.dataTransfer.dropEffect = "copy"
+    }
+  }, [node.type])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (node.type !== "folder") return
+    e.preventDefault()
+    e.stopPropagation()
+    // Check if we're actually leaving this element
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      onDragLeaveFolder?.()
+    }
+  }, [node.type, onDragLeaveFolder])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    // Always prevent default and stop propagation for folders to capture the drop
+    if (node.type === "folder") {
+      e.preventDefault()
+      e.stopPropagation()
+
+      console.log("[FileTreeNode] Drop on folder:", node.path)
+
+      const files = Array.from(e.dataTransfer.files)
+      console.log("[FileTreeNode] Files:", files.length)
+      if (files.length === 0) return
+
+      // Get file paths using Electron's webUtils API
+      const filePaths = files
+        .map((file) => {
+          const path = window.webUtils?.getPathForFile?.(file)
+          console.log("[FileTreeNode] File path:", path)
+          return path
+        })
+        .filter((p): p is string => !!p)
+
+      console.log("[FileTreeNode] Valid paths:", filePaths)
+
+      if (filePaths.length > 0) {
+        onDropFiles?.(node.path, filePaths)
+      }
+    }
+  }, [node.type, node.path, onDropFiles])
+
   const paddingLeft = level * 12 + 6
 
   // Determine text color based on status
@@ -149,10 +224,16 @@ export const FileTreeNode = memo(function FileTreeNode({
           <button
             type="button"
             onClick={handleClick}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
             className={cn(
               "w-full flex items-center gap-1.5 py-0.5 text-left rounded-sm",
               "hover:bg-accent/50 cursor-pointer transition-colors text-xs",
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              // Drop target highlight for folders
+              isDropTarget && "bg-primary/20 ring-1 ring-primary",
             )}
             style={{ paddingLeft: `${paddingLeft}px`, paddingRight: "6px" }}
           >
@@ -249,6 +330,10 @@ export const FileTreeNode = memo(function FileTreeNode({
               onSelectFile={onSelectFile}
               gitStatus={gitStatus}
               projectPath={projectPath}
+              onDropFiles={onDropFiles}
+              dropTargetPath={dropTargetPath}
+              onDragEnterFolder={onDragEnterFolder}
+              onDragLeaveFolder={onDragLeaveFolder}
             />
           ))}
         </div>

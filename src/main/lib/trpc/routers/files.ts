@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat, readFile, rm, rename } from "node:fs/promises"
+import { readdir, stat, readFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
 import { join, relative, basename } from "node:path"
 import { observable } from "@trpc/server/observable"
@@ -845,6 +845,84 @@ export const filesRouter = router({
       } catch (error) {
         console.error("[files.revealInFileManager] Error:", error)
         throw new Error(`Failed to reveal: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Import files from external locations into the project
+   * Copies files to the target directory within the project
+   */
+  importFiles: publicProcedure
+    .input(
+      z.object({
+        /** Source file paths (absolute paths from drag-and-drop) */
+        sourcePaths: z.array(z.string()),
+        /** Target directory within the project (absolute path) */
+        targetDir: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { sourcePaths, targetDir } = input
+      const results: { source: string; dest: string; success: boolean; error?: string }[] = []
+
+      // Ensure target directory exists
+      try {
+        await mkdir(targetDir, { recursive: true })
+      } catch (error) {
+        // Directory might already exist, that's fine
+      }
+
+      for (const sourcePath of sourcePaths) {
+        const fileName = basename(sourcePath)
+        const destPath = join(targetDir, fileName)
+
+        try {
+          // Check if source exists
+          const sourceStat = await stat(sourcePath)
+
+          if (sourceStat.isDirectory()) {
+            // For directories, we'd need recursive copy - skip for now
+            results.push({
+              source: sourcePath,
+              dest: destPath,
+              success: false,
+              error: "Directory import not yet supported. Please import individual files.",
+            })
+            continue
+          }
+
+          // Check if destination already exists
+          try {
+            await stat(destPath)
+            // File exists, add a suffix
+            const ext = fileName.includes(".") ? `.${fileName.split(".").pop()}` : ""
+            const nameWithoutExt = ext ? fileName.slice(0, -ext.length) : fileName
+            const timestamp = Date.now()
+            const newDestPath = join(targetDir, `${nameWithoutExt}_${timestamp}${ext}`)
+            await copyFile(sourcePath, newDestPath)
+            results.push({ source: sourcePath, dest: newDestPath, success: true })
+          } catch {
+            // File doesn't exist, copy normally
+            await copyFile(sourcePath, destPath)
+            results.push({ source: sourcePath, dest: destPath, success: true })
+          }
+        } catch (error) {
+          console.error(`[files.importFiles] Failed to copy ${sourcePath}:`, error)
+          results.push({
+            source: sourcePath,
+            dest: destPath,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length
+      return {
+        success: successCount > 0,
+        total: sourcePaths.length,
+        imported: successCount,
+        results,
       }
     }),
 })
