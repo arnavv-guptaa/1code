@@ -4,6 +4,11 @@ import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Data
 import { memo, useCallback, useMemo } from "react"
 import { cn } from "../../../../lib/utils"
 import type { TreeNode } from "./build-file-tree"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+} from "../../../../components/ui/context-menu"
+import { FileTreeContextMenu } from "./FileTreeContextMenu"
 
 // Data file extensions for special icons
 const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite" | "parquet"> = {
@@ -76,6 +81,8 @@ interface FileTreeNodeProps {
   /** @deprecated Use onSelectDataFile and onSelectSourceFile instead */
   onSelectFile?: (path: string) => void
   gitStatus?: GitStatusMap
+  /** Absolute path to project root (for context menu actions) */
+  projectPath?: string
 }
 
 export const FileTreeNode = memo(function FileTreeNode({
@@ -87,6 +94,7 @@ export const FileTreeNode = memo(function FileTreeNode({
   onSelectSourceFile,
   onSelectFile,
   gitStatus = {},
+  projectPath,
 }: FileTreeNodeProps) {
   const isExpanded = node.type === "folder" && expandedFolders.has(node.path)
   const hasChildren = node.type === "folder" && node.children.length > 0
@@ -131,78 +139,89 @@ export const FileTreeNode = memo(function FileTreeNode({
 
   return (
     <div className="min-w-0">
-      <button
-        type="button"
-        onClick={handleClick}
-        className={cn(
-          "w-full flex items-center gap-1.5 py-0.5 text-left rounded-sm",
-          "hover:bg-accent/50 cursor-pointer transition-colors text-xs",
-          "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        )}
-        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: "6px" }}
-      >
-        {/* Chevron for folders */}
-        {node.type === "folder" ? (
-          <ChevronRight
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            type="button"
+            onClick={handleClick}
             className={cn(
-              "size-3 text-muted-foreground shrink-0 transition-transform duration-150",
-              isExpanded && "rotate-90",
-              !hasChildren && "invisible",
+              "w-full flex items-center gap-1.5 py-0.5 text-left rounded-sm",
+              "hover:bg-accent/50 cursor-pointer transition-colors text-xs",
+              "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
+            style={{ paddingLeft: `${paddingLeft}px`, paddingRight: "6px" }}
+          >
+            {/* Chevron for folders */}
+            {node.type === "folder" ? (
+              <ChevronRight
+                className={cn(
+                  "size-3 text-muted-foreground shrink-0 transition-transform duration-150",
+                  isExpanded && "rotate-90",
+                  !hasChildren && "invisible",
+                )}
+              />
+            ) : (
+              <span className="size-3 shrink-0" /> // Spacer for files
+            )}
+
+            {/* Icon */}
+            {node.type === "folder" ? (
+              isExpanded ? (
+                <FolderOpen className={cn(
+                  "size-3.5 shrink-0",
+                  folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+                )} />
+              ) : (
+                <Folder className={cn(
+                  "size-3.5 shrink-0",
+                  folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
+                )} />
+              )
+            ) : (
+              // Use special icons for data files
+              (() => {
+                const dataType = getDataFileType(node.name)
+                if (dataType === "csv") {
+                  return <FileSpreadsheet className="size-3.5 shrink-0 text-green-500" />
+                }
+                if (dataType === "json") {
+                  return <FileJson className="size-3.5 shrink-0 text-yellow-500" />
+                }
+                if (dataType === "sqlite") {
+                  return <Database className="size-3.5 shrink-0 text-blue-500" />
+                }
+                if (dataType === "parquet") {
+                  return <FileBox className="size-3.5 shrink-0 text-purple-500" />
+                }
+                return <File className={cn("size-3.5 shrink-0", textColorClass)} />
+              })()
+            )}
+
+            {/* Name */}
+            <span className={cn("truncate flex-1", textColorClass)}>
+              {node.name}
+            </span>
+
+            {/* Status indicator */}
+            {statusIndicator && (
+              <span className={cn(
+                "text-[10px] font-medium shrink-0 ml-1",
+                textColorClass,
+                isStaged && "underline" // Underline if staged
+              )}>
+                {statusIndicator}
+              </span>
+            )}
+          </button>
+        </ContextMenuTrigger>
+        {projectPath && (
+          <FileTreeContextMenu
+            path={node.path}
+            type={node.type}
+            projectPath={projectPath}
           />
-        ) : (
-          <span className="size-3 shrink-0" /> // Spacer for files
         )}
-
-        {/* Icon */}
-        {node.type === "folder" ? (
-          isExpanded ? (
-            <FolderOpen className={cn(
-              "size-3.5 shrink-0",
-              folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
-            )} />
-          ) : (
-            <Folder className={cn(
-              "size-3.5 shrink-0",
-              folderHasChanges ? "text-yellow-500 dark:text-yellow-400" : "text-muted-foreground"
-            )} />
-          )
-        ) : (
-          // Use special icons for data files
-          (() => {
-            const dataType = getDataFileType(node.name)
-            if (dataType === "csv") {
-              return <FileSpreadsheet className="size-3.5 shrink-0 text-green-500" />
-            }
-            if (dataType === "json") {
-              return <FileJson className="size-3.5 shrink-0 text-yellow-500" />
-            }
-            if (dataType === "sqlite") {
-              return <Database className="size-3.5 shrink-0 text-blue-500" />
-            }
-            if (dataType === "parquet") {
-              return <FileBox className="size-3.5 shrink-0 text-purple-500" />
-            }
-            return <File className={cn("size-3.5 shrink-0", textColorClass)} />
-          })()
-        )}
-
-        {/* Name */}
-        <span className={cn("truncate flex-1", textColorClass)}>
-          {node.name}
-        </span>
-
-        {/* Status indicator */}
-        {statusIndicator && (
-          <span className={cn(
-            "text-[10px] font-medium shrink-0 ml-1",
-            textColorClass,
-            isStaged && "underline" // Underline if staged
-          )}>
-            {statusIndicator}
-          </span>
-        )}
-      </button>
+      </ContextMenu>
 
       {/* Children (only for expanded folders) */}
       {isExpanded && node.children.length > 0 && (
@@ -218,6 +237,7 @@ export const FileTreeNode = memo(function FileTreeNode({
               onSelectSourceFile={onSelectSourceFile}
               onSelectFile={onSelectFile}
               gitStatus={gitStatus}
+              projectPath={projectPath}
             />
           ))}
         </div>

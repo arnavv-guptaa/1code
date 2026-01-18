@@ -52,7 +52,7 @@ export function useFileContent(
     const path = filePath.startsWith("/")
       ? filePath
       : `${projectPath}/${filePath}`
-    console.log("[useFileContent] Building path:", { projectPath, filePath, absolutePath: path })
+    // console.log("[useFileContent] Building path:", { projectPath, filePath, absolutePath: path })
     return path
   }, [projectPath, filePath])
 
@@ -69,7 +69,7 @@ export function useFileContent(
 
   // Return result based on query state
   return useMemo((): FileContentResult => {
-    console.log("[useFileContent] Computing result:", { enabled, isLoading, error, data })
+    // console.log("[useFileContent] Computing result:", { enabled, isLoading, error, data })
 
     if (!enabled) {
       return {
@@ -103,7 +103,7 @@ export function useFileContent(
     }
 
     if (!data) {
-      console.log("[useFileContent] No data returned")
+      // console.log("[useFileContent] No data returned")
       return {
         content: null,
         isLoading: false,
@@ -114,7 +114,7 @@ export function useFileContent(
     }
 
     if (data.ok) {
-      console.log("[useFileContent] Success:", data.byteLength, "bytes")
+      // console.log("[useFileContent] Success:", data.byteLength, "bytes")
       return {
         content: data.content,
         isLoading: false,
@@ -124,7 +124,7 @@ export function useFileContent(
       }
     }
 
-    console.log("[useFileContent] Server returned error:", data.reason)
+    // console.log("[useFileContent] Server returned error:", data.reason)
     return {
       content: null,
       isLoading: false,

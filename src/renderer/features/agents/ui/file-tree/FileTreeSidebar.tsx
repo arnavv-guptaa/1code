@@ -162,6 +162,7 @@ export function FileTreeSidebar({
               onSelectSourceFile={onSelectSourceFile}
               onSelectFile={onSelectFile}
               gitStatus={gitStatus as GitStatusMap}
+              projectPath={projectPath}
             />
           ))
         )}

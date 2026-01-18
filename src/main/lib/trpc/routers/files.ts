@@ -1,12 +1,13 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
-import { readdir, stat, readFile } from "node:fs/promises"
+import { readdir, stat, readFile, rm, rename } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
 import { join, relative, basename } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
 import { exec } from "node:child_process"
 import { promisify } from "node:util"
+import { shell } from "electron"
 import {
   getDataFileInfo,
   parseDataFile,
@@ -757,14 +758,14 @@ export const filesRouter = router({
       const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2 MB
       const BINARY_CHECK_SIZE = 8192
 
-      console.log("[files.readTextFile] Reading file:", input.filePath)
+      // console.log("[files.readTextFile] Reading file:", input.filePath)
 
       try {
         // Check file size first
         const stats = await stat(input.filePath)
-        console.log("[files.readTextFile] File size:", stats.size)
+        // console.log("[files.readTextFile] File size:", stats.size)
         if (stats.size > MAX_FILE_SIZE) {
-          console.log("[files.readTextFile] File too large")
+          // console.log("[files.readTextFile] File too large")
           return { ok: false, reason: "too-large" }
         }
 
@@ -775,12 +776,12 @@ export const filesRouter = router({
         const checkLength = Math.min(buffer.length, BINARY_CHECK_SIZE)
         for (let i = 0; i < checkLength; i++) {
           if (buffer[i] === 0) {
-            console.log("[files.readTextFile] Binary file detected")
+            // console.log("[files.readTextFile] Binary file detected")
             return { ok: false, reason: "binary" }
           }
         }
 
-        console.log("[files.readTextFile] Success, returning", buffer.length, "bytes")
+        // console.log("[files.readTextFile] Success, returning", buffer.length, "bytes")
         return {
           ok: true,
           content: buffer.toString("utf-8"),
@@ -789,6 +790,51 @@ export const filesRouter = router({
       } catch (error) {
         console.error("[files.readTextFile] Error:", error)
         return { ok: false, reason: "not-found" }
+      }
+    }),
+
+  /**
+   * Delete a file or folder
+   */
+  deleteFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .mutation(async ({ input }) => {
+      try {
+        await rm(input.filePath, { recursive: true })
+        return { success: true }
+      } catch (error) {
+        console.error("[files.deleteFile] Error:", error)
+        throw new Error(`Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Rename a file or folder
+   */
+  renameFile: publicProcedure
+    .input(z.object({ oldPath: z.string(), newPath: z.string() }))
+    .mutation(async ({ input }) => {
+      try {
+        await rename(input.oldPath, input.newPath)
+        return { success: true }
+      } catch (error) {
+        console.error("[files.renameFile] Error:", error)
+        throw new Error(`Failed to rename: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Reveal a file or folder in the system file manager (Finder/Explorer)
+   */
+  revealInFileManager: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .mutation(({ input }) => {
+      try {
+        shell.showItemInFolder(input.filePath)
+        return { success: true }
+      } catch (error) {
+        console.error("[files.revealInFileManager] Error:", error)
+        throw new Error(`Failed to reveal: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }),
 })
