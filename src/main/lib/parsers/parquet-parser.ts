@@ -1,23 +1,30 @@
 import type { ParsedData, ParsedColumn, ColumnType } from "./types"
+import duckdb from "duckdb"
 
 /**
- * Map Parquet types to our column types
+ * Map DuckDB types to our column types
  */
-function mapParquetType(parquetType: string): ColumnType {
-  const type = parquetType?.toUpperCase() || ""
+function mapDuckDBType(duckdbType: string): ColumnType {
+  const type = duckdbType?.toUpperCase() || ""
 
   // Integer types
   if (
     type.includes("INT") ||
-    type.includes("LONG") ||
-    type.includes("SHORT") ||
-    type.includes("BYTE")
+    type.includes("BIGINT") ||
+    type.includes("SMALLINT") ||
+    type.includes("TINYINT") ||
+    type.includes("HUGEINT")
   ) {
     return "number"
   }
 
   // Float types
-  if (type.includes("FLOAT") || type.includes("DOUBLE") || type.includes("DECIMAL")) {
+  if (
+    type.includes("FLOAT") ||
+    type.includes("DOUBLE") ||
+    type.includes("DECIMAL") ||
+    type.includes("REAL")
+  ) {
     return "number"
   }
 
@@ -35,39 +42,49 @@ function mapParquetType(parquetType: string): ColumnType {
     return "date"
   }
 
-  // Default to string for everything else (UTF8, BYTE_ARRAY, etc.)
+  // Default to string for everything else
   return "string"
 }
 
 /**
- * Extract column info from Parquet schema
+ * Process a row to handle BigInt and Date values for JSON serialization
  */
-function extractColumnsFromSchema(schema: any): ParsedColumn[] {
-  const columns: ParsedColumn[] = []
-
-  if (!schema || !schema.schema) {
-    return columns
+function processRow(row: Record<string, unknown>): Record<string, unknown> {
+  const processed: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (typeof value === "bigint") {
+      processed[key] = Number(value)
+    } else if (value instanceof Date) {
+      processed[key] = value.toISOString()
+    } else if (Buffer.isBuffer(value)) {
+      processed[key] = value.toString("utf-8")
+    } else {
+      processed[key] = value
+    }
   }
-
-  // The schema object has a 'schema' property with field definitions
-  const fields = schema.schema
-  for (const [fieldName, fieldDef] of Object.entries(fields)) {
-    if (fieldName === "root" || !fieldDef) continue
-
-    const field = fieldDef as any
-    const parquetType = field.type || field.originalType || "UTF8"
-
-    columns.push({
-      name: fieldName,
-      type: mapParquetType(parquetType),
-    })
-  }
-
-  return columns
+  return processed
 }
 
 /**
- * Parse a Parquet file and return structured data
+ * Execute a DuckDB query and return results as a promise
+ */
+function queryDuckDB(
+  db: duckdb.Database,
+  sql: string
+): Promise<Record<string, unknown>[]> {
+  return new Promise((resolve, reject) => {
+    db.all(sql, (err, rows) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(rows as Record<string, unknown>[])
+      }
+    })
+  })
+}
+
+/**
+ * Parse a Parquet file and return structured data using DuckDB
  */
 export async function parseParquetFile(
   filePath: string,
@@ -75,54 +92,39 @@ export async function parseParquetFile(
 ): Promise<ParsedData> {
   const { limit = 1000, offset = 0 } = options
 
-  // Dynamic require to handle CommonJS module
-  const parquetModule = await import("parquetjs-lite")
-  const parquet = parquetModule.default || parquetModule
-  const ParquetReader = parquet.ParquetReader
+  // Escape single quotes in file path for SQL
+  const escapedPath = filePath.replace(/'/g, "''")
 
-  const reader = await ParquetReader.openFile(filePath)
+  const db = new duckdb.Database(":memory:")
 
   try {
-    // Get schema info
-    const schema = reader.getSchema()
-    const columns = extractColumnsFromSchema(schema)
+    // Get column info using DESCRIBE
+    const describeResult = await queryDuckDB(
+      db,
+      `DESCRIBE SELECT * FROM read_parquet('${escapedPath}')`
+    )
+
+    const columns: ParsedColumn[] = describeResult.map((row) => ({
+      name: String(row.column_name || row.name || ""),
+      type: mapDuckDBType(String(row.column_type || row.type || "")),
+    }))
 
     // Get total row count
-    const totalRows = Number(reader.getRowCount())
+    const countResult = await queryDuckDB(
+      db,
+      `SELECT COUNT(*) as cnt FROM read_parquet('${escapedPath}')`
+    )
+    const totalRows = Number(countResult[0]?.cnt || 0)
 
-    // Read rows with cursor
-    const cursor = reader.getCursor()
-    const rows: Record<string, unknown>[] = []
+    // Get rows with pagination
+    const dataResult = await queryDuckDB(
+      db,
+      `SELECT * FROM read_parquet('${escapedPath}') LIMIT ${limit} OFFSET ${offset}`
+    )
 
-    let currentRow = 0
-    let record: Record<string, unknown> | null = null
+    const rows = dataResult.map(processRow)
 
-    // Skip to offset
-    while (currentRow < offset && (record = await cursor.next())) {
-      currentRow++
-    }
-
-    // Read rows up to limit
-    while (rows.length < limit && (record = await cursor.next())) {
-      // Convert any BigInt values to numbers for JSON serialization
-      const processedRecord: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(record)) {
-        if (typeof value === "bigint") {
-          processedRecord[key] = Number(value)
-        } else if (value instanceof Date) {
-          processedRecord[key] = value.toISOString()
-        } else if (Buffer.isBuffer(value)) {
-          // Handle binary data
-          processedRecord[key] = value.toString("utf-8")
-        } else {
-          processedRecord[key] = value
-        }
-      }
-      rows.push(processedRecord)
-      currentRow++
-    }
-
-    await reader.close()
+    db.close()
 
     return {
       columns,
@@ -131,7 +133,7 @@ export async function parseParquetFile(
       truncated: offset + rows.length < totalRows,
     }
   } catch (error) {
-    await reader.close()
+    db.close()
     throw error
   }
 }
@@ -140,18 +142,19 @@ export async function parseParquetFile(
  * Get row count from a Parquet file without reading all data
  */
 export async function getParquetRowCount(filePath: string): Promise<number> {
-  const parquetModule = await import("parquetjs-lite")
-  const parquet = parquetModule.default || parquetModule
-  const ParquetReader = parquet.ParquetReader
-
-  const reader = await ParquetReader.openFile(filePath)
+  const escapedPath = filePath.replace(/'/g, "''")
+  const db = new duckdb.Database(":memory:")
 
   try {
-    const rowCount = Number(reader.getRowCount())
-    await reader.close()
-    return rowCount
+    const result = await queryDuckDB(
+      db,
+      `SELECT COUNT(*) as cnt FROM read_parquet('${escapedPath}')`
+    )
+    const count = Number(result[0]?.cnt || 0)
+    db.close()
+    return count
   } catch (error) {
-    await reader.close()
+    db.close()
     throw error
   }
 }
@@ -159,20 +162,27 @@ export async function getParquetRowCount(filePath: string): Promise<number> {
 /**
  * Get column info from a Parquet file without reading data
  */
-export async function getParquetColumns(filePath: string): Promise<ParsedColumn[]> {
-  const parquetModule = await import("parquetjs-lite")
-  const parquet = parquetModule.default || parquetModule
-  const ParquetReader = parquet.ParquetReader
-
-  const reader = await ParquetReader.openFile(filePath)
+export async function getParquetColumns(
+  filePath: string
+): Promise<ParsedColumn[]> {
+  const escapedPath = filePath.replace(/'/g, "''")
+  const db = new duckdb.Database(":memory:")
 
   try {
-    const schema = reader.getSchema()
-    const columns = extractColumnsFromSchema(schema)
-    await reader.close()
+    const result = await queryDuckDB(
+      db,
+      `DESCRIBE SELECT * FROM read_parquet('${escapedPath}')`
+    )
+
+    const columns: ParsedColumn[] = result.map((row) => ({
+      name: String(row.column_name || row.name || ""),
+      type: mapDuckDBType(String(row.column_type || row.type || "")),
+    }))
+
+    db.close()
     return columns
   } catch (error) {
-    await reader.close()
+    db.close()
     throw error
   }
 }
