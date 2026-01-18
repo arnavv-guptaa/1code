@@ -219,12 +219,55 @@ export function isDataFile(filePath: string): boolean {
   const dataExtensions = [
     ".csv",
     ".tsv",
-    ".json",
-    ".jsonl",
     ".db",
     ".sqlite",
     ".sqlite3",
     ".parquet",
+    ".pq",
+    ".xlsx",
+    ".xls",
+    ".arrow",
+    ".feather",
+    ".ipc",
   ]
   return dataExtensions.includes(ext)
+}
+
+/**
+ * File viewer type - determines which viewer component to use
+ */
+export type FileViewerType = "code" | "image" | "pdf" | "markdown" | "html"
+
+/**
+ * Image file extensions
+ */
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp"]
+
+/**
+ * Get the appropriate viewer type for a file
+ */
+export function getFileViewerType(filePath: string): FileViewerType {
+  const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
+
+  if (IMAGE_EXTENSIONS.includes(ext)) {
+    return "image"
+  }
+  if (ext === ".pdf") {
+    return "pdf"
+  }
+  if ([".md", ".mdx", ".markdown"].includes(ext)) {
+    return "markdown"
+  }
+  if ([".html", ".htm"].includes(ext)) {
+    return "html"
+  }
+  return "code"
+}
+
+/**
+ * Check if a file is an image
+ */
+export function isImageFile(filePath: string): boolean {
+  const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
+  return IMAGE_EXTENSIONS.includes(ext)
 }

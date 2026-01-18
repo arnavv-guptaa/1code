@@ -824,6 +824,58 @@ export const filesRouter = router({
     }),
 
   /**
+   * Read a binary file (images, etc.) and return as base64
+   */
+  readBinaryFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }): Promise<{
+      ok: true
+      data: string
+      mimeType: string
+      byteLength: number
+    } | {
+      ok: false
+      reason: "not-found" | "too-large"
+    }> => {
+      const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB for images
+
+      // MIME type mapping
+      const mimeTypes: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".webp": "image/webp",
+        ".ico": "image/x-icon",
+        ".bmp": "image/bmp",
+        ".pdf": "application/pdf",
+      }
+
+      try {
+        const stats = await stat(input.filePath)
+        if (stats.size > MAX_FILE_SIZE) {
+          return { ok: false, reason: "too-large" }
+        }
+
+        const buffer = await readFile(input.filePath)
+        const base64 = buffer.toString("base64")
+        const ext = input.filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || ""
+        const mimeType = mimeTypes[ext] || "application/octet-stream"
+
+        return {
+          ok: true,
+          data: base64,
+          mimeType,
+          byteLength: stats.size,
+        }
+      } catch (error) {
+        console.error("[files.readBinaryFile] Error:", error)
+        return { ok: false, reason: "not-found" }
+      }
+    }),
+
+  /**
    * Delete a file or folder
    */
   deleteFile: publicProcedure
