@@ -12,6 +12,7 @@ import {
   parseDuckDBFile,
   getDuckDBFileType,
   listExcelSheets as listExcelSheetsFromDuckDB,
+  queryDataFile as queryDataFileDuckDB,
 } from "./duckdb-parser"
 
 // Re-export types
@@ -171,4 +172,25 @@ export function listSqliteTables(filePath: string): string[] {
  */
 export async function listExcelSheets(filePath: string): Promise<string[]> {
   return listExcelSheetsFromDuckDB(filePath)
+}
+
+/**
+ * Execute a SQL query against any supported data file (CSV, JSON, Parquet, Excel, Arrow)
+ * The file is available as the 'data' table in the query
+ * For SQLite files, use querySqlite instead
+ */
+export async function queryDataFile(
+  filePath: string,
+  sql: string,
+  options: { sheetName?: string } = {}
+): Promise<ParsedData> {
+  const fileType = detectFileType(filePath)
+
+  // For SQLite, use the SQLite-specific query function
+  if (fileType === "sqlite") {
+    return querySqliteDb(filePath, sql)
+  }
+
+  // For all other types, use DuckDB
+  return queryDataFileDuckDB(filePath, sql, options)
 }

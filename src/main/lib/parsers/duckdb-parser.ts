@@ -285,6 +285,88 @@ export async function getDuckDBColumns(
 }
 
 /**
+ * Execute an arbitrary SQL query against a data file
+ * The file is available as the 'data' table in the query
+ */
+export async function queryDataFile(
+  filePath: string,
+  sql: string,
+  options: { sheetName?: string } = {}
+): Promise<ParsedData> {
+  const { sheetName } = options
+
+  // Detect file type - support CSV in addition to DuckDB native types
+  const ext = path.extname(filePath).toLowerCase()
+  let readFn: string
+
+  // Escape single quotes in file path for SQL
+  const escapedPath = filePath.replace(/'/g, "''")
+
+  // Determine the read function based on file type
+  if (ext === ".csv" || ext === ".tsv") {
+    readFn = `read_csv('${escapedPath}', auto_detect=true)`
+  } else if (ext === ".json" || ext === ".jsonl") {
+    readFn = `read_json('${escapedPath}', auto_detect=true)`
+  } else {
+    const fileType = getDuckDBFileType(filePath)
+    if (!fileType) {
+      throw new Error(`Unsupported file type for SQL queries: ${filePath}`)
+    }
+    readFn = getReadFunction(fileType, escapedPath, sheetName)
+  }
+
+  const db = new duckdb.Database(":memory:")
+
+  try {
+    // Install extensions if needed (for Excel)
+    const fileType = getDuckDBFileType(filePath)
+    if (fileType) {
+      await installExtensions(db, fileType)
+    }
+
+    // Create a view named 'data' for the file
+    await queryDuckDB(db, `CREATE VIEW data AS SELECT * FROM ${readFn}`)
+
+    // Execute the user's SQL query
+    const dataResult = await queryDuckDB(db, sql)
+
+    if (dataResult.length === 0) {
+      db.close()
+      return {
+        columns: [],
+        rows: [],
+        totalRows: 0,
+        truncated: false,
+      }
+    }
+
+    // Infer columns from the first row
+    const columns: ParsedColumn[] = Object.keys(dataResult[0]).map((name) => {
+      const value = dataResult[0][name]
+      let colType: ColumnType = "string"
+      if (typeof value === "number") colType = "number"
+      else if (typeof value === "boolean") colType = "boolean"
+      else if (value instanceof Date) colType = "date"
+      return { name, type: colType }
+    })
+
+    const rows = dataResult.map(processRow)
+
+    db.close()
+
+    return {
+      columns,
+      rows,
+      totalRows: rows.length,
+      truncated: false,
+    }
+  } catch (error) {
+    db.close()
+    throw error
+  }
+}
+
+/**
  * List sheets in an Excel file
  */
 export async function listExcelSheets(filePath: string): Promise<string[]> {

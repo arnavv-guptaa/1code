@@ -12,6 +12,7 @@ import {
   getDataFileInfo,
   parseDataFile,
   querySqlite,
+  queryDataFile,
   listSqliteTables,
   listExcelSheets,
   isDataFile,
@@ -731,6 +732,25 @@ export const filesRouter = router({
     )
     .query(({ input }) => {
       return querySqlite(input.filePath, input.sql)
+    }),
+
+  /**
+   * Execute a SQL query on any data file (CSV, JSON, Parquet, Excel, Arrow, SQLite)
+   * The file is available as the 'data' table in the query
+   * Example: SELECT * FROM data WHERE column > 100
+   */
+  queryDataFile: publicProcedure
+    .input(
+      z.object({
+        filePath: z.string(),
+        sql: z.string(),
+        sheetName: z.string().optional(), // For Excel files
+      })
+    )
+    .mutation(async ({ input }) => {
+      return queryDataFile(input.filePath, input.sql, {
+        sheetName: input.sheetName,
+      })
     }),
 
   /**

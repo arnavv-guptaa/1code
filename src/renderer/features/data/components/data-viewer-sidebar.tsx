@@ -34,6 +34,13 @@ import {
   CornerDownRight,
   Table2,
   ArrowRight,
+  Play,
+  ChevronUp,
+  ChevronDown,
+  Terminal,
+  AlertCircle,
+  History,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -78,6 +85,71 @@ interface DataViewerSidebarProps {
 // Page size options
 const PAGE_SIZE_OPTIONS = [100, 500, 1000, 5000] as const
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number]
+
+// Query history constants
+const MAX_HISTORY_SIZE = 15
+const HISTORY_STORAGE_PREFIX = "sql-history:"
+
+interface QueryHistoryEntry {
+  query: string
+  timestamp: number
+}
+
+/**
+ * Get query history for a specific file from localStorage
+ */
+function getQueryHistory(filePath: string): QueryHistoryEntry[] {
+  try {
+    const key = `${HISTORY_STORAGE_PREFIX}${filePath}`
+    const stored = localStorage.getItem(key)
+    if (!stored) return []
+    return JSON.parse(stored) as QueryHistoryEntry[]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Save a query to history for a specific file
+ */
+function saveQueryToHistory(filePath: string, query: string): QueryHistoryEntry[] {
+  const trimmedQuery = query.trim()
+  if (!trimmedQuery) return getQueryHistory(filePath)
+
+  try {
+    const key = `${HISTORY_STORAGE_PREFIX}${filePath}`
+    let history = getQueryHistory(filePath)
+
+    // Remove duplicate if exists
+    history = history.filter((h) => h.query !== trimmedQuery)
+
+    // Add new entry at the beginning
+    history.unshift({
+      query: trimmedQuery,
+      timestamp: Date.now(),
+    })
+
+    // Keep only last N entries
+    history = history.slice(0, MAX_HISTORY_SIZE)
+
+    localStorage.setItem(key, JSON.stringify(history))
+    return history
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Clear query history for a specific file
+ */
+function clearQueryHistory(filePath: string): void {
+  try {
+    const key = `${HISTORY_STORAGE_PREFIX}${filePath}`
+    localStorage.removeItem(key)
+  } catch {
+    // Ignore errors
+  }
+}
 
 /**
  * Get the file extension
@@ -253,6 +325,28 @@ export function DataViewerSidebar({
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
+  // ============ SQL Query Panel State ============
+  const [showQueryPanel, setShowQueryPanel] = useState(false)
+  const [sqlQuery, setSqlQuery] = useState("SELECT * FROM data LIMIT 100")
+  const [queryError, setQueryError] = useState<string | null>(null)
+  const [isQueryMode, setIsQueryMode] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const historyRef = useRef<HTMLDivElement>(null)
+
+  // Build absolute path - must be defined before useEffects that depend on it
+  const absolutePath = filePath.startsWith("/")
+    ? filePath
+    : `${projectPath}/${filePath}`
+
+  // Load query history when file changes
+  useEffect(() => {
+    if (absolutePath) {
+      setQueryHistory(getQueryHistory(absolutePath))
+    }
+  }, [absolutePath])
+
   // Glide Data Grid theme - use explicit colors instead of CSS variables
   const gridTheme: Partial<Theme> = useMemo(
     () => ({
@@ -306,11 +400,6 @@ export function DataViewerSidebar({
     [isDark]
   )
 
-  // Build absolute path
-  const absolutePath = filePath.startsWith("/")
-    ? filePath
-    : `${projectPath}/${filePath}`
-
   // For SQLite and Excel files, we need to select a table/sheet
   const selectedTableAtom = useMemo(
     () => selectedSqliteTableAtomFamily(absolutePath),
@@ -350,8 +439,8 @@ export function DataViewerSidebar({
     setCurrentPage(0)
   }, [absolutePath, selectedTable])
 
-  // Fetch data with pagination
-  const { data, isLoading, error } = trpc.files.previewDataFile.useQuery(
+  // Fetch data with pagination (normal mode)
+  const { data: fileData, isLoading: isFileLoading, error: fileError } = trpc.files.previewDataFile.useQuery(
     {
       filePath: absolutePath,
       limit: pageSize,
@@ -360,11 +449,92 @@ export function DataViewerSidebar({
     },
     {
       enabled:
+        !isQueryMode &&
         fileType !== "unknown" &&
         (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")) &&
         (fileType !== "excel" || (!!selectedTable && selectedTable !== "")),
     }
   )
+
+  // SQL query state for query mode
+  const [queryData, setQueryData] = useState<typeof fileData | null>(null)
+  const [isQueryLoading, setIsQueryLoading] = useState(false)
+
+  // Query mutation for SQL queries
+  const queryMutation = trpc.files.queryDataFile.useMutation({
+    onSuccess: (result) => {
+      setQueryData(result)
+      setQueryError(null)
+      setIsQueryLoading(false)
+      // Reset column state for new query results
+      if (result.columns) {
+        setColumnOrder(result.columns.map((_, i) => i))
+        setHiddenColumns(new Set())
+        setSortColumn(null)
+      }
+    },
+    onError: (err) => {
+      setQueryError(err.message)
+      setIsQueryLoading(false)
+    },
+  })
+
+  // Execute SQL query
+  const executeQuery = useCallback(() => {
+    if (!sqlQuery.trim()) return
+    setIsQueryLoading(true)
+    setQueryError(null)
+    setIsQueryMode(true)
+    setShowHistory(false)
+    // Save to history
+    const newHistory = saveQueryToHistory(absolutePath, sqlQuery)
+    setQueryHistory(newHistory)
+    queryMutation.mutate({
+      filePath: absolutePath,
+      sql: sqlQuery,
+      sheetName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
+    })
+  }, [sqlQuery, absolutePath, fileType, selectedTable, queryMutation])
+
+  // Load query from history
+  const loadQueryFromHistory = useCallback((query: string) => {
+    setSqlQuery(query)
+    setShowHistory(false)
+    textareaRef.current?.focus()
+  }, [])
+
+  // Clear all history for this file
+  const handleClearHistory = useCallback(() => {
+    clearQueryHistory(absolutePath)
+    setQueryHistory([])
+    setShowHistory(false)
+  }, [absolutePath])
+
+  // Close history dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false)
+      }
+    }
+    if (showHistory) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [showHistory])
+
+  // Reset to file view
+  const resetToFileView = useCallback(() => {
+    setIsQueryMode(false)
+    setQueryData(null)
+    setQueryError(null)
+    setCurrentPage(0)
+  }, [])
+
+  // Use query data when in query mode, otherwise use file data
+  const data = isQueryMode ? queryData : fileData
+  const isLoading = isQueryMode ? isQueryLoading : isFileLoading
+  const error = isQueryMode ? null : fileError
 
   // Calculate pagination info
   const totalRows = data?.totalRows ?? 0
@@ -788,6 +958,164 @@ export function DataViewerSidebar({
         </div>
       )}
 
+      {/* SQL Query Panel */}
+      <div className="border-b flex-shrink-0">
+        {/* Query Panel Header */}
+        <button
+          onClick={() => setShowQueryPanel((prev) => !prev)}
+          className="w-full px-2 py-1 flex items-center justify-between hover:bg-muted/50 transition-colors"
+        >
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Terminal className="h-3.5 w-3.5" />
+            <span>SQL</span>
+            {isQueryMode && (
+              <span className="px-1 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
+                active
+              </span>
+            )}
+          </div>
+          {showQueryPanel ? (
+            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </button>
+
+        {/* Query Panel Content */}
+        {showQueryPanel && (
+          <div className="px-2 pb-2 space-y-2">
+            {/* Textarea with inline buttons */}
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                value={sqlQuery}
+                onChange={(e) => setSqlQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault()
+                    executeQuery()
+                  }
+                }}
+                placeholder="SELECT * FROM data LIMIT 100"
+                className={cn(
+                  "w-full h-20 px-2 py-1.5 pr-20 text-xs font-mono rounded-md resize-none",
+                  "bg-muted/50 border border-input",
+                  "focus:outline-none focus:ring-1 focus:ring-ring",
+                  "placeholder:text-muted-foreground/40"
+                )}
+                spellCheck={false}
+              />
+              {/* Buttons inside textarea */}
+              <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
+                {/* History button */}
+                {queryHistory.length > 0 && (
+                  <div className="relative" ref={historyRef}>
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn("h-6 w-6", showHistory && "bg-accent")}
+                            onClick={() => setShowHistory((prev) => !prev)}
+                          >
+                            <History className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Query history</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    {/* History dropdown */}
+                    {showHistory && (
+                      <div className="absolute bottom-full right-0 mb-1 w-64 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md z-50">
+                        <div className="flex items-center justify-between px-2 py-1.5 border-b">
+                          <span className="text-[10px] font-medium text-muted-foreground">Recent queries</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={handleClearHistory}
+                          >
+                            <Trash2 className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </div>
+                        {queryHistory.map((entry, idx) => (
+                          <button
+                            key={idx}
+                            className="w-full px-2 py-1.5 text-left hover:bg-accent transition-colors border-b last:border-b-0"
+                            onClick={() => loadQueryFromHistory(entry.query)}
+                          >
+                            <div className="text-[10px] font-mono text-foreground truncate">
+                              {entry.query}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isQueryMode && (
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={resetToFileView}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Reset view</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-6 w-6",
+                          !isQueryLoading && sqlQuery.trim() && "text-primary hover:text-primary hover:bg-primary/10"
+                        )}
+                        onClick={executeQuery}
+                        disabled={isQueryLoading || !sqlQuery.trim()}
+                      >
+                        {isQueryLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Run query (⌘↵)</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+
+            {/* Error display */}
+            {queryError && (
+              <div className="flex items-start gap-1.5 p-1.5 rounded bg-destructive/10 text-destructive text-[10px]">
+                <AlertCircle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                <span className="font-mono break-all leading-tight">{queryError}</span>
+              </div>
+            )}
+
+            {/* Query result info */}
+            {isQueryMode && queryData && !queryError && (
+              <div className="text-[10px] text-muted-foreground">
+                {queryData.totalRows.toLocaleString()} row{queryData.totalRows !== 1 ? "s" : ""}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Grid */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {isLoading && !data ? (
@@ -820,7 +1148,7 @@ export function DataViewerSidebar({
               // Row markers
               rowMarkers={showRowMarkers ? "both" : "none"}
               rowMarkerWidth={60}
-              rowMarkerStartIndex={currentPage * pageSize + 1}
+              rowMarkerStartIndex={isQueryMode ? 1 : currentPage * pageSize + 1}
               // Selection
               gridSelection={selection}
               onGridSelectionChange={onSelectionChange}
