@@ -8,7 +8,11 @@ import {
   previewSqliteTable,
   querySqlite as querySqliteDb,
 } from "./sqlite-parser"
-import { parseParquetFile } from "./parquet-parser"
+import {
+  parseDuckDBFile,
+  getDuckDBFileType,
+  listExcelSheets as listExcelSheetsFromDuckDB,
+} from "./duckdb-parser"
 
 // Re-export types
 export * from "./types"
@@ -26,6 +30,11 @@ const DATA_EXTENSIONS: Record<string, DataFileType> = {
   ".sqlite3": "sqlite",
   ".parquet": "parquet",
   ".pq": "parquet",
+  ".xlsx": "excel",
+  ".xls": "excel",
+  ".arrow": "arrow",
+  ".feather": "arrow",
+  ".ipc": "arrow",
 }
 
 /**
@@ -70,6 +79,16 @@ export async function getDataFileInfo(filePath: string): Promise<DataFileInfo> {
       }
     }
 
+    // For Excel files, list sheets
+    if (fileType === "excel") {
+      try {
+        info.tables = await listExcelSheetsFromDuckDB(filePath)
+      } catch (error) {
+        console.warn("[parsers] Failed to list Excel sheets:", error)
+        info.tables = ["Sheet1"]
+      }
+    }
+
     return info
   } catch (error) {
     console.error("[parsers] Failed to get file info:", error)
@@ -100,7 +119,13 @@ export async function parseDataFile(
       return parseJsonFile(filePath, { limit, offset })
 
     case "parquet":
-      return parseParquetFile(filePath, { limit, offset })
+    case "arrow":
+      // Use unified DuckDB parser for Parquet and Arrow files
+      return parseDuckDBFile(filePath, { limit, offset })
+
+    case "excel":
+      // Use unified DuckDB parser for Excel files
+      return parseDuckDBFile(filePath, { limit, offset, sheetName: tableName })
 
     case "sqlite": {
       // For SQLite, we need a table name
@@ -139,4 +164,11 @@ export function querySqlite(filePath: string, sql: string): ParsedData {
  */
 export function listSqliteTables(filePath: string): string[] {
   return listTables(filePath)
+}
+
+/**
+ * List sheets in an Excel file
+ */
+export async function listExcelSheets(filePath: string): Promise<string[]> {
+  return listExcelSheetsFromDuckDB(filePath)
 }

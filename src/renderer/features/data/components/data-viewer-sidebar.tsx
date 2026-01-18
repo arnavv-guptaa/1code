@@ -32,6 +32,8 @@ import {
   Copy,
   Expand,
   CornerDownRight,
+  Table2,
+  ArrowRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -88,7 +90,7 @@ function getFileExtension(filePath: string): string {
 /**
  * Get file type from extension
  */
-function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | "unknown" {
+function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | "excel" | "arrow" | "unknown" {
   const ext = getFileExtension(filePath)
   switch (ext) {
     case ".csv":
@@ -104,6 +106,13 @@ function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | 
     case ".parquet":
     case ".pq":
       return "parquet"
+    case ".xlsx":
+    case ".xls":
+      return "excel"
+    case ".arrow":
+    case ".feather":
+    case ".ipc":
+      return "arrow"
     default:
       return "unknown"
   }
@@ -124,6 +133,10 @@ function FileIcon({ filePath }: { filePath: string }) {
       return <Database className="h-4 w-4 text-blue-500" />
     case "parquet":
       return <FileBox className="h-4 w-4 text-purple-500" />
+    case "excel":
+      return <Table2 className="h-4 w-4 text-emerald-600" />
+    case "arrow":
+      return <ArrowRight className="h-4 w-4 text-orange-500" />
     default:
       return <FileSpreadsheet className="h-4 w-4" />
   }
@@ -298,7 +311,7 @@ export function DataViewerSidebar({
     ? filePath
     : `${projectPath}/${filePath}`
 
-  // For SQLite files, we need to select a table
+  // For SQLite and Excel files, we need to select a table/sheet
   const selectedTableAtom = useMemo(
     () => selectedSqliteTableAtomFamily(absolutePath),
     [absolutePath]
@@ -306,15 +319,24 @@ export function DataViewerSidebar({
   const [selectedTable, setSelectedTable] = useAtom(selectedTableAtom)
 
   // Fetch tables for SQLite files
-  const { data: tables } = trpc.files.listSqliteTables.useQuery(
+  const { data: sqliteTables } = trpc.files.listSqliteTables.useQuery(
     { filePath: absolutePath },
     { enabled: fileType === "sqlite" }
   )
 
-  // Auto-select first table if none selected
+  // Fetch sheets for Excel files
+  const { data: excelSheets } = trpc.files.listExcelSheets.useQuery(
+    { filePath: absolutePath },
+    { enabled: fileType === "excel" }
+  )
+
+  // Use the appropriate tables/sheets based on file type
+  const tables = fileType === "sqlite" ? sqliteTables : fileType === "excel" ? excelSheets : undefined
+
+  // Auto-select first table/sheet if none selected
   useEffect(() => {
     if (
-      fileType === "sqlite" &&
+      (fileType === "sqlite" || fileType === "excel") &&
       tables &&
       tables.length > 0 &&
       !selectedTable
@@ -334,12 +356,13 @@ export function DataViewerSidebar({
       filePath: absolutePath,
       limit: pageSize,
       offset: currentPage * pageSize,
-      tableName: fileType === "sqlite" ? selectedTable || undefined : undefined,
+      tableName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
     },
     {
       enabled:
         fileType !== "unknown" &&
-        (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")),
+        (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")) &&
+        (fileType !== "excel" || (!!selectedTable && selectedTable !== "")),
     }
   )
 
@@ -742,13 +765,17 @@ export function DataViewerSidebar({
         onJumpToRow={() => setShowJumpDialog(true)}
       />
 
-      {/* Table selector for SQLite */}
-      {fileType === "sqlite" && tables && tables.length > 0 && (
+      {/* Table/Sheet selector for SQLite and Excel */}
+      {(fileType === "sqlite" || fileType === "excel") && tables && tables.length > 0 && (
         <div className="px-3 py-2 border-b">
           <Select value={selectedTable} onValueChange={setSelectedTable}>
             <SelectTrigger className="w-full h-8 text-sm">
-              <Database className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-              <SelectValue placeholder="Select a table" />
+              {fileType === "sqlite" ? (
+                <Database className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+              ) : (
+                <Table2 className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+              )}
+              <SelectValue placeholder={fileType === "sqlite" ? "Select a table" : "Select a sheet"} />
             </SelectTrigger>
             <SelectContent>
               {tables.map((table) => (

@@ -13,6 +13,7 @@ import {
   parseDataFile,
   querySqlite,
   listSqliteTables,
+  listExcelSheets,
   isDataFile,
 } from "../../parsers"
 
@@ -739,6 +740,15 @@ export const filesRouter = router({
     .input(z.object({ filePath: z.string() }))
     .query(({ input }) => {
       return listSqliteTables(input.filePath)
+    }),
+
+  /**
+   * List sheets in an Excel file
+   */
+  listExcelSheets: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }) => {
+      return listExcelSheets(input.filePath)
     }),
 
   /**

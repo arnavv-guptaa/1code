@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Database, FileBox } from "lucide-react"
+import { ChevronRight, File, Folder, FolderOpen, FileSpreadsheet, FileJson, Database, FileBox, Table2, ArrowRight } from "lucide-react"
 import { memo, useCallback, useMemo } from "react"
 import { cn } from "../../../../lib/utils"
 import type { TreeNode } from "./build-file-tree"
@@ -11,7 +11,7 @@ import {
 import { FileTreeContextMenu } from "./FileTreeContextMenu"
 
 // Data file extensions for special icons
-const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite" | "parquet"> = {
+const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite" | "parquet" | "excel" | "arrow"> = {
   ".csv": "csv",
   ".tsv": "csv",
   ".json": "json",
@@ -21,9 +21,14 @@ const DATA_FILE_EXTENSIONS: Record<string, "csv" | "json" | "sqlite" | "parquet"
   ".sqlite3": "sqlite",
   ".parquet": "parquet",
   ".pq": "parquet",
+  ".xlsx": "excel",
+  ".xls": "excel",
+  ".arrow": "arrow",
+  ".feather": "arrow",
+  ".ipc": "arrow",
 }
 
-function getDataFileType(filename: string): "csv" | "json" | "sqlite" | "parquet" | null {
+function getDataFileType(filename: string): "csv" | "json" | "sqlite" | "parquet" | "excel" | "arrow" | null {
   const ext = filename.includes(".") ? `.${filename.split(".").pop()?.toLowerCase()}` : ""
   return DATA_FILE_EXTENSIONS[ext] || null
 }
@@ -192,6 +197,12 @@ export const FileTreeNode = memo(function FileTreeNode({
                 }
                 if (dataType === "parquet") {
                   return <FileBox className="size-3.5 shrink-0 text-purple-500" />
+                }
+                if (dataType === "excel") {
+                  return <Table2 className="size-3.5 shrink-0 text-emerald-600" />
+                }
+                if (dataType === "arrow") {
+                  return <ArrowRight className="size-3.5 shrink-0 text-orange-500" />
                 }
                 return <File className={cn("size-3.5 shrink-0", textColorClass)} />
               })()
