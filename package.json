@@ -76,6 +76,7 @@
     "electron-updater": "^6.7.3",
     "gray-matter": "^4.0.3",
     "jotai": "^2.11.1",
+    "jotai-family": "^1.0.1",
     "lodash-es": "^4.17.22",
     "lucide-react": "^0.468.0",
     "monaco-editor": "^0.55.1",

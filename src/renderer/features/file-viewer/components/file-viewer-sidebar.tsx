@@ -19,8 +19,12 @@ import {
 import { cn } from "@/lib/utils"
 import { fileViewerWordWrapAtom } from "../../agents/atoms"
 import { useFileContent, getErrorMessage } from "../hooks/use-file-content"
-import { getMonacoLanguage } from "../utils/language-map"
+import { getMonacoLanguage, getFileViewerType } from "../utils/language-map"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
+import { ImageViewer } from "./image-viewer"
+import { PdfViewer } from "./pdf-viewer"
+import { MarkdownViewer } from "./markdown-viewer"
+import { HtmlViewer } from "./html-viewer"
 
 interface FileViewerSidebarProps {
   chatId: string
@@ -171,7 +175,7 @@ function Header({
 }
 
 /**
- * FileViewerSidebar - Monaco Editor-based file viewer
+ * FileViewerSidebar - Routes to appropriate viewer based on file type
  */
 export function FileViewerSidebar({
   chatId,
@@ -179,6 +183,65 @@ export function FileViewerSidebar({
   projectPath,
   onClose,
 }: FileViewerSidebarProps) {
+  const viewerType = getFileViewerType(filePath)
+
+  // Route to specialized viewers for non-code files
+  switch (viewerType) {
+    case "image":
+      return (
+        <ImageViewer
+          filePath={filePath}
+          projectPath={projectPath}
+          onClose={onClose}
+        />
+      )
+    case "pdf":
+      return (
+        <PdfViewer
+          filePath={filePath}
+          projectPath={projectPath}
+          onClose={onClose}
+        />
+      )
+    case "markdown":
+      return (
+        <MarkdownViewer
+          filePath={filePath}
+          projectPath={projectPath}
+          onClose={onClose}
+        />
+      )
+    case "html":
+      return (
+        <HtmlViewer
+          filePath={filePath}
+          projectPath={projectPath}
+          onClose={onClose}
+        />
+      )
+    default:
+      return (
+        <CodeViewer
+          filePath={filePath}
+          projectPath={projectPath}
+          onClose={onClose}
+        />
+      )
+  }
+}
+
+/**
+ * CodeViewer - Monaco Editor-based code viewer (default)
+ */
+function CodeViewer({
+  filePath,
+  projectPath,
+  onClose,
+}: {
+  filePath: string
+  projectPath: string
+  onClose: () => void
+}) {
   const fileName = getFileName(filePath)
   const language = getMonacoLanguage(filePath)
   const { resolvedTheme } = useTheme()

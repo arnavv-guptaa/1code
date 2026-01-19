@@ -1,5 +1,6 @@
 import { atom } from "jotai"
-import { atomFamily, atomWithStorage } from "jotai/utils"
+import { atomWithStorage } from "jotai/utils"
+import { atomFamily } from "jotai-family"
 
 // Selected agent chat ID - null means "new chat" view (persisted to restore on reload)
 export const selectedAgentChatIdAtom = atomWithStorage<string | null>(

@@ -66,9 +66,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
   DialogTitle,
+  CanvasDialogContent,
+  CanvasDialogHeader,
+  CanvasDialogBody,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
@@ -434,10 +435,20 @@ export function DataViewerSidebar({
     }
   }, [fileType, tables, selectedTable, setSelectedTable])
 
-  // Reset page when file/table changes
+  // Reset page and query state when file changes
   useEffect(() => {
     setCurrentPage(0)
-  }, [absolutePath, selectedTable])
+    // Reset query mode state when switching files
+    setIsQueryMode(false)
+    setQueryData(null)
+    setQueryError(null)
+    setSqlQuery("SELECT * FROM data LIMIT 100")
+  }, [absolutePath])
+
+  // Reset page when table/sheet changes (within same file)
+  useEffect(() => {
+    setCurrentPage(0)
+  }, [selectedTable])
 
   // Fetch data with pagination (normal mode)
   const { data: fileData, isLoading: isFileLoading, error: fileError } = trpc.files.previewDataFile.useQuery(
@@ -1377,75 +1388,97 @@ export function DataViewerSidebar({
 
       {/* Jump to Row Dialog */}
       <Dialog open={showJumpDialog} onOpenChange={setShowJumpDialog}>
-        <DialogContent className="sm:max-w-[300px]">
-          <DialogHeader>
-            <DialogTitle>Jump to Row</DialogTitle>
-          </DialogHeader>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={totalRows}
-              placeholder={`1 - ${totalRows.toLocaleString()}`}
-              value={jumpToRowInput}
-              onChange={(e) => setJumpToRowInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleJumpToRow()
-                }
-              }}
-              autoFocus
-            />
-            <Button onClick={handleJumpToRow} disabled={!jumpToRowInput}>
-              Go
-            </Button>
-          </div>
-        </DialogContent>
+        <CanvasDialogContent className="w-[320px]" showCloseButton={false}>
+          <CanvasDialogHeader className="pb-2">
+            <DialogTitle className="text-sm font-medium">Jump to Row</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter a row number between 1 and {totalRows.toLocaleString()}
+            </p>
+          </CanvasDialogHeader>
+          <CanvasDialogBody className="pt-0">
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={totalRows}
+                placeholder={`Row number`}
+                value={jumpToRowInput}
+                onChange={(e) => setJumpToRowInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleJumpToRow()
+                  }
+                  if (e.key === "Escape") {
+                    setShowJumpDialog(false)
+                  }
+                }}
+                className="h-9 text-sm"
+                autoFocus
+              />
+              <Button
+                onClick={handleJumpToRow}
+                disabled={!jumpToRowInput}
+                size="sm"
+                className="h-9 px-4"
+              >
+                <CornerDownRight className="h-3.5 w-3.5 mr-1.5" />
+                Go
+              </Button>
+            </div>
+          </CanvasDialogBody>
+        </CanvasDialogContent>
       </Dialog>
 
       {/* Cell Details Dialog */}
       <Dialog open={cellDetailsOpen} onOpenChange={setCellDetailsOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="font-mono text-sm">
+        <CanvasDialogContent className="w-[560px] max-h-[80vh]">
+          <CanvasDialogHeader className="pb-2">
+            <div className="flex items-center gap-2 pr-8">
+              <span className="font-mono text-sm font-medium truncate">
                 {cellDetailsContent?.columnName}
               </span>
-              <span className="text-muted-foreground text-xs font-normal">
+              <span className="text-muted-foreground text-xs flex-shrink-0">
                 Row {cellDetailsContent?.rowIndex}
               </span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-2">
+            </div>
+          </CanvasDialogHeader>
+          <CanvasDialogBody className="pt-0">
             {cellDetailsContent && (
               <div className="relative">
                 <pre
                   className={cn(
-                    "p-3 rounded-md text-sm font-mono whitespace-pre-wrap break-all max-h-[60vh] overflow-auto",
-                    isDark ? "bg-zinc-900" : "bg-zinc-100"
+                    "p-3 rounded-lg text-xs font-mono whitespace-pre-wrap break-all max-h-[50vh] overflow-auto",
+                    isDark ? "bg-zinc-900/50 border border-zinc-800" : "bg-zinc-100 border border-zinc-200"
                   )}
                 >
                   {isJsonLike(cellDetailsContent.value)
                     ? formatJsonForDisplay(cellDetailsContent.value)
                     : formatCellValue(cellDetailsContent.value)}
                 </pre>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-2 right-2 h-7 w-7"
-                  onClick={() => {
-                    const text = isJsonLike(cellDetailsContent.value)
-                      ? formatJsonForDisplay(cellDetailsContent.value)
-                      : formatCellValue(cellDetailsContent.value)
-                    navigator.clipboard.writeText(text)
-                  }}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-2 right-2 h-7 w-7"
+                        onClick={() => {
+                          const text = isJsonLike(cellDetailsContent.value)
+                            ? formatJsonForDisplay(cellDetailsContent.value)
+                            : formatCellValue(cellDetailsContent.value)
+                          navigator.clipboard.writeText(text)
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy to clipboard</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             )}
-          </div>
-        </DialogContent>
+          </CanvasDialogBody>
+        </CanvasDialogContent>
       </Dialog>
     </div>
   )
