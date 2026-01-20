@@ -1184,6 +1184,119 @@ export function GitHubIcon({ className }: FrameworkIconProps) {
   )
 }
 
+// CSV/TSV - Green spreadsheet icon #22c55e
+export function CSVIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"
+        stroke="#22c55e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2V8H20" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 13H16" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 17H16" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12 13V17" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// SQLite/Database - Blue database icon #3b82f6
+export function SQLiteIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <ellipse cx="12" cy="5" rx="8" ry="3" stroke="#3b82f6" strokeWidth="2" />
+      <path d="M4 5V19C4 20.6569 7.58172 22 12 22C16.4183 22 20 20.6569 20 19V5" stroke="#3b82f6" strokeWidth="2" />
+      <path d="M4 12C4 13.6569 7.58172 15 12 15C16.4183 15 20 13.6569 20 12" stroke="#3b82f6" strokeWidth="2" />
+    </svg>
+  )
+}
+
+// Parquet - Purple columnar data icon #a855f7
+export function ParquetIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="3" width="5" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+      <rect x="10" y="3" width="5" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+      <rect x="17" y="3" width="4" height="18" rx="1" stroke="#a855f7" strokeWidth="2" />
+    </svg>
+  )
+}
+
+// Excel - Emerald spreadsheet icon #059669
+export function ExcelIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"
+        stroke="#059669"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2V8H20" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 15L15 15" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+      <path d="M9 12L15 18" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15 12L9 18" stroke="#059669" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Apache Arrow - Orange arrow icon #f97316
+export function ArrowDataIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M5 12H19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 5L19 12L12 19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 5V19"
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 // Map language/framework to icon component
 export function getFrameworkIcon(
   language?: string | null,

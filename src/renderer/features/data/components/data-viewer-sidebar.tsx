@@ -16,9 +16,6 @@ import {
   X,
   Loader2,
   Database,
-  FileSpreadsheet,
-  FileJson,
-  FileBox,
   Search,
   Pin,
   Hash,
@@ -33,7 +30,6 @@ import {
   Expand,
   CornerDownRight,
   Table2,
-  ArrowRight,
   Play,
   ChevronUp,
   ChevronDown,
@@ -42,6 +38,7 @@ import {
   History,
   Trash2,
 } from "lucide-react"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -192,27 +189,11 @@ function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | 
 }
 
 /**
- * Get file icon based on type
+ * Get file icon based on type - uses centralized icon function for consistency
  */
 function FileIcon({ filePath }: { filePath: string }) {
-  const fileType = getFileType(filePath)
-
-  switch (fileType) {
-    case "csv":
-      return <FileSpreadsheet className="h-4 w-4 text-green-500" />
-    case "json":
-      return <FileJson className="h-4 w-4 text-yellow-500" />
-    case "sqlite":
-      return <Database className="h-4 w-4 text-blue-500" />
-    case "parquet":
-      return <FileBox className="h-4 w-4 text-purple-500" />
-    case "excel":
-      return <Table2 className="h-4 w-4 text-emerald-600" />
-    case "arrow":
-      return <ArrowRight className="h-4 w-4 text-orange-500" />
-    default:
-      return <FileSpreadsheet className="h-4 w-4" />
-  }
+  const Icon = getFileIconByExtension(filePath)
+  return Icon ? <Icon className="h-4 w-4" /> : null
 }
 
 /**

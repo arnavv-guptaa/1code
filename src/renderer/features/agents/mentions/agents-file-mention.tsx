@@ -85,6 +85,11 @@ import {
   SvelteIcon,
   AstroIcon,
   SwiftIcon,
+  CSVIcon,
+  SQLiteIcon,
+  ParquetIcon,
+  ExcelIcon,
+  ArrowDataIcon,
 } from "../../../icons/framework-icons"
 
 interface ChangedFile {
@@ -170,6 +175,19 @@ const KNOWN_FILE_ICON_EXTENSIONS = new Set([
   "svelte",
   "astro",
   "swift",
+  // Data file extensions
+  "csv",
+  "tsv",
+  "db",
+  "sqlite",
+  "sqlite3",
+  "parquet",
+  "pq",
+  "xlsx",
+  "xls",
+  "arrow",
+  "feather",
+  "ipc",
 ])
 
 // Get file icon component based on file extension
@@ -308,6 +326,24 @@ export function getFileIconByExtension(
       return AstroIcon
     case "swift":
       return SwiftIcon
+    // Data file types
+    case "csv":
+    case "tsv":
+      return CSVIcon
+    case "db":
+    case "sqlite":
+    case "sqlite3":
+      return SQLiteIcon
+    case "parquet":
+    case "pq":
+      return ParquetIcon
+    case "xlsx":
+    case "xls":
+      return ExcelIcon
+    case "arrow":
+    case "feather":
+    case "ipc":
+      return ArrowDataIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }

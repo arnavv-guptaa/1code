@@ -5,11 +5,11 @@ import { useTheme } from "next-themes"
 import {
   X,
   Loader2,
-  FileCode,
   WrapText,
   AlertCircle,
   RefreshCw,
 } from "lucide-react"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -51,12 +51,11 @@ function formatFileSize(bytes: number): string {
 }
 
 /**
- * File icon based on language
+ * File icon based on file path
  */
-function FileIcon({ language }: { language: string }) {
-  // For now, use a generic file code icon
-  // Could be expanded to show language-specific icons
-  return <FileCode className="h-4 w-4 text-muted-foreground" />
+function FileIcon({ filePath }: { filePath: string }) {
+  const Icon = getFileIconByExtension(filePath)
+  return Icon ? <Icon className="h-4 w-4" /> : null
 }
 
 /**
@@ -125,12 +124,10 @@ function Header({
   onToggleWordWrap: () => void
   onClose: () => void
 }) {
-  const language = getMonacoLanguage(filePath)
-
   return (
     <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <FileIcon language={language} />
+        <FileIcon filePath={filePath} />
         <span className="text-sm font-medium truncate" title={filePath}>
           {fileName}
         </span>

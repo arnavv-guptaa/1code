@@ -114,7 +114,7 @@ interface FileEntry {
 
 // Cache for file and folder listings
 const fileListCache = new Map<string, { entries: FileEntry[]; timestamp: number }>()
-const CACHE_TTL = 1000 // 1 second (short TTL since we have real-time watching)
+const CACHE_TTL = 30000 // 30 seconds (watchers invalidate cache on changes)
 
 // Debounce timers for file change events
 const debounceTimers = new Map<string, NodeJS.Timeout>()
@@ -207,7 +207,7 @@ async function getGitStatus(projectPath: string): Promise<Map<string, GitFileSta
     // Check if this is a git repository
     // --ignored shows gitignored files (marked with !)
     // -uall shows all untracked files
-    const { stdout } = await execAsync("git status --porcelain --ignored -uall", {
+    const { stdout } = await execAsync("git status --porcelain --ignored -unormal", {
       cwd: projectPath,
       maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large repos
     })
@@ -387,8 +387,8 @@ async function scanDirectory(
       const relativePath = relative(rootPath, fullPath)
 
       if (entry.isDirectory()) {
-        // Skip .git directory (internal git data, not useful to show)
-        if (entry.name === ".git") continue
+        // Skip ignored directories (node_modules, .git, dist, build, etc.)
+        if (IGNORED_DIRS.has(entry.name)) continue
 
         // Add the folder itself to results
         entries.push({ path: relativePath, type: "folder" })
@@ -528,15 +528,8 @@ export const filesRouter = router({
         // Get entry list (cached or fresh scan)
         const entries = await getEntryList(projectPath)
         
-        // Debug: log folder count
-        const folderCount = entries.filter(e => e.type === "folder").length
-        const fileCount = entries.filter(e => e.type === "file").length
-        console.log(`[files] Scanned ${projectPath}: ${folderCount} folders, ${fileCount} files`)
-
         // Filter and sort by query
-        const results = filterEntries(entries, query, limit)
-        console.log(`[files] Query "${query}": returning ${results.length} results, folders: ${results.filter(r => r.type === "folder").length}`)
-        return results
+        return filterEntries(entries, query, limit)
       } catch (error) {
         console.error(`[files] Error searching files:`, error)
         return []

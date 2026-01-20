@@ -2,6 +2,7 @@
 
 import { useAtom } from "jotai"
 import { useCallback, useMemo, useState, useEffect, useRef } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { Button } from "../../../../components/ui/button"
 import { IconDoubleChevronLeft } from "../../../../components/ui/icons"
 import { Input } from "../../../../components/ui/input"
@@ -13,8 +14,8 @@ import {
 } from "../../../../components/ui/tooltip"
 import { trpc } from "../../../../lib/trpc"
 import { expandedFoldersAtomFamily } from "../../atoms"
-import { buildFileTree, countFiles, countFolders, filterTree } from "./build-file-tree"
-import { FileTreeNode, type GitStatusMap } from "./FileTreeNode"
+import { buildFileTree, countFiles, countFolders, filterTree, flattenVisibleTree } from "./build-file-tree"
+import { FileTreeNodeRow, type GitStatusMap } from "./FileTreeNode"
 import { Download } from "lucide-react"
 import { toast } from "sonner"
 
@@ -114,9 +115,43 @@ export function FileTreeSidebar({
     [tree, searchQuery]
   )
 
+  // Flatten visible tree for virtualization (only expanded nodes)
+  const flattenedNodes = useMemo(
+    () => flattenVisibleTree(filteredTree, expandedFolders),
+    [filteredTree, expandedFolders]
+  )
+
+  // Stabilize gitStatus object to prevent unnecessary re-renders
+  const stableGitStatus = useMemo(() => gitStatus, [JSON.stringify(gitStatus)])
+
+  // Pre-compute set of folders that have changes (O(n) once instead of O(n*m))
+  const foldersWithChanges = useMemo(() => {
+    const folders = new Set<string>()
+    for (const [path, status] of Object.entries(stableGitStatus)) {
+      if (status.status === "ignored") continue
+      // Add all parent folders of this changed file
+      const parts = path.split("/")
+      for (let i = 1; i < parts.length; i++) {
+        folders.add(parts.slice(0, i).join("/"))
+      }
+    }
+    return folders
+  }, [stableGitStatus])
+
   // Stats for footer (show unfiltered counts)
   const fileCount = useMemo(() => countFiles(tree), [tree])
   const folderCount = useMemo(() => countFolders(tree), [tree])
+
+  // Scroll container ref for virtualization
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Virtualizer for efficient rendering of large file trees
+  const virtualizer = useVirtualizer({
+    count: flattenedNodes.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 24, // Each row is ~24px
+    overscan: 15, // Render 15 extra items above/below viewport
+  })
 
   // Toggle folder expansion (simple - all files are loaded upfront)
   const handleToggleFolder = useCallback(
@@ -409,7 +444,8 @@ export function FileTreeSidebar({
 
       {/* Content with drag-and-drop */}
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden py-1 relative"
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden relative"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -462,25 +498,48 @@ export function FileTreeSidebar({
             No files matching "{searchQuery}"
           </div>
         ) : (
-          filteredTree.map((node) => (
-            <FileTreeNode
-              key={node.path}
-              node={node}
-              level={0}
-              expandedFolders={expandedFolders}
-              onToggleFolder={handleToggleFolder}
-              onSelectDataFile={onSelectDataFile}
-              onSelectSourceFile={onSelectSourceFile}
-              onSelectFile={onSelectFile}
-              gitStatus={gitStatus as GitStatusMap}
-              projectPath={projectPath}
-              onDropFiles={handleDropOnFolder}
-              dropTargetPath={dropTarget.type === "folder" ? dropTarget.path : null}
-              onDragEnterFolder={handleDragEnterFolder}
-              onDragLeaveFolder={handleDragLeaveFolder}
-              searchQuery={searchQuery}
-            />
-          ))
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const { node, level } = flattenedNodes[virtualItem.index]
+              return (
+                <div
+                  key={node.path}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <FileTreeNodeRow
+                    node={node}
+                    level={level}
+                    isExpanded={node.type === "folder" && expandedFolders.has(node.path)}
+                    onToggleFolder={handleToggleFolder}
+                    onSelectDataFile={onSelectDataFile}
+                    onSelectSourceFile={onSelectSourceFile}
+                    onSelectFile={onSelectFile}
+                    gitStatus={stableGitStatus as GitStatusMap}
+                    foldersWithChanges={foldersWithChanges}
+                    projectPath={projectPath}
+                    onDropFiles={handleDropOnFolder}
+                    dropTargetPath={dropTarget.type === "folder" ? dropTarget.path : null}
+                    onDragEnterFolder={handleDragEnterFolder}
+                    onDragLeaveFolder={handleDragLeaveFolder}
+                    searchQuery={searchQuery}
+                  />
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
 
