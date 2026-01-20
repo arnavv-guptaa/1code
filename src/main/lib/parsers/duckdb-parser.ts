@@ -1,6 +1,8 @@
 import type { ParsedData, ParsedColumn, ColumnType } from "./types"
 import duckdb from "duckdb"
 import path from "node:path"
+import { createInflateRaw } from "node:zlib"
+import { readFile } from "node:fs/promises"
 
 /**
  * DuckDB-supported file types for this parser
@@ -143,9 +145,9 @@ async function installExtensions(
   fileType: DuckDBFileType
 ): Promise<void> {
   if (fileType === "excel") {
-    // Excel support requires the spatial extension (for xlsx)
-    await queryDuckDB(db, "INSTALL spatial")
-    await queryDuckDB(db, "LOAD spatial")
+    // DuckDB 1.2+ has native excel extension for xlsx files
+    await queryDuckDB(db, "INSTALL excel")
+    await queryDuckDB(db, "LOAD excel")
   }
 }
 
@@ -367,28 +369,119 @@ export async function queryDataFile(
 }
 
 /**
+ * Parse an xlsx file (which is a ZIP archive) and extract sheet names from xl/workbook.xml
+ * This is a pure Node.js implementation without additional dependencies.
+ */
+async function extractSheetNamesFromXlsx(filePath: string): Promise<string[]> {
+  // Read the file as a buffer
+  const buffer = await readFile(filePath)
+
+  // XLSX files are ZIP archives. We need to find and read xl/workbook.xml
+  // ZIP file structure: local file headers followed by file data
+
+  const sheets: string[] = []
+  let offset = 0
+
+  while (offset < buffer.length - 4) {
+    // Check for local file header signature (0x04034b50)
+    const signature = buffer.readUInt32LE(offset)
+    if (signature !== 0x04034b50) break
+
+    // Parse local file header
+    const compressionMethod = buffer.readUInt16LE(offset + 8)
+    const compressedSize = buffer.readUInt32LE(offset + 18)
+    const uncompressedSize = buffer.readUInt32LE(offset + 22)
+    const fileNameLength = buffer.readUInt16LE(offset + 26)
+    const extraFieldLength = buffer.readUInt16LE(offset + 28)
+
+    const fileName = buffer.toString('utf8', offset + 30, offset + 30 + fileNameLength)
+    const dataStart = offset + 30 + fileNameLength + extraFieldLength
+    const dataEnd = dataStart + compressedSize
+
+    // Look for xl/workbook.xml
+    if (fileName === 'xl/workbook.xml') {
+      let xmlContent: string
+
+      if (compressionMethod === 0) {
+        // No compression (stored)
+        xmlContent = buffer.toString('utf8', dataStart, dataEnd)
+      } else if (compressionMethod === 8) {
+        // Deflate compression
+        const compressedData = buffer.subarray(dataStart, dataEnd)
+        try {
+          // Use zlib.inflateRaw for raw deflate data
+          const decompressed = await new Promise<Buffer>((resolve, reject) => {
+            const inflate = createInflateRaw()
+            const chunks: Buffer[] = []
+            inflate.on('data', (chunk: Buffer) => chunks.push(chunk))
+            inflate.on('end', () => resolve(Buffer.concat(chunks)))
+            inflate.on('error', reject)
+            inflate.end(compressedData)
+          })
+          xmlContent = decompressed.toString('utf8')
+        } catch (err) {
+          console.warn('[duckdb-parser] Failed to decompress workbook.xml:', err)
+          break
+        }
+      } else {
+        console.warn(`[duckdb-parser] Unsupported compression method: ${compressionMethod}`)
+        break
+      }
+
+      // Parse sheet names from XML
+      // Looking for: <sheet name="SheetName" ... /> or <sheet ... name="SheetName" .../>
+      // The name attribute can appear anywhere in the tag
+      // Try multiple regex patterns to be more robust
+      const sheetTagRegex = /<sheet\s+[^>]*>/gi
+      let tagMatch
+      while ((tagMatch = sheetTagRegex.exec(xmlContent)) !== null) {
+        const tag = tagMatch[0]
+        // Extract name attribute from the tag
+        const nameMatch = /name=["']([^"']+)["']/i.exec(tag)
+        if (nameMatch && nameMatch[1]) {
+          sheets.push(nameMatch[1])
+        }
+      }
+
+      // Debug log
+      console.log('[duckdb-parser] Found sheets in workbook.xml:', sheets)
+
+      break // Found workbook.xml, no need to continue
+    }
+
+    // Move to next file in the archive
+    offset = dataEnd
+  }
+
+  return sheets
+}
+
+/**
  * List sheets in an Excel file
+ * Supports both .xlsx (modern Excel) and provides meaningful error for .xls (legacy)
  */
 export async function listExcelSheets(filePath: string): Promise<string[]> {
-  const db = new duckdb.Database(":memory:")
+  const ext = path.extname(filePath).toLowerCase()
+
+  // Check if it's a legacy .xls file (not supported by DuckDB)
+  if (ext === '.xls') {
+    console.warn('[duckdb-parser] .xls format is not supported. Only .xlsx files are supported.')
+    // Return empty array - the UI should show an appropriate message
+    return []
+  }
 
   try {
-    await installExtensions(db, "excel")
+    // Extract sheet names directly from the xlsx file
+    const sheets = await extractSheetNamesFromXlsx(filePath)
 
-    const escapedPath = filePath.replace(/'/g, "''")
-    // Use st_read_meta to get sheet names
-    const result = await queryDuckDB(
-      db,
-      `SELECT DISTINCT sheet_name FROM read_xlsx_metadata('${escapedPath}')`
-    )
+    if (sheets.length === 0) {
+      console.warn('[duckdb-parser] No sheets found in Excel file')
+      return []
+    }
 
-    const sheets = result.map((row) => String(row.sheet_name || ""))
-    db.close()
     return sheets
   } catch (error) {
-    db.close()
-    // If metadata reading fails, return a default sheet
-    console.warn("[duckdb-parser] Failed to list Excel sheets:", error)
-    return ["Sheet1"]
+    console.warn('[duckdb-parser] Failed to list Excel sheets:', error)
+    return []
   }
 }

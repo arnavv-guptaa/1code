@@ -83,10 +83,13 @@ export async function getDataFileInfo(filePath: string): Promise<DataFileInfo> {
     // For Excel files, list sheets
     if (fileType === "excel") {
       try {
-        info.tables = await listExcelSheetsFromDuckDB(filePath)
+        const sheets = await listExcelSheetsFromDuckDB(filePath)
+        // If no sheets found (e.g., .xls file which is not supported), leave tables undefined
+        if (sheets.length > 0) {
+          info.tables = sheets
+        }
       } catch (error) {
         console.warn("[parsers] Failed to list Excel sheets:", error)
-        info.tables = ["Sheet1"]
       }
     }
 

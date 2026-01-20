@@ -272,6 +272,7 @@ export function DataViewerSidebar({
 }: DataViewerSidebarProps) {
   const fileType = getFileType(filePath)
   const fileName = getFileName(filePath)
+  const isLegacyXls = fileType === "excel" && getFileExtension(filePath) === ".xls"
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
   const gridRef = useRef<any>(null)
@@ -451,6 +452,10 @@ export function DataViewerSidebar({
   }, [selectedTable])
 
   // Fetch data with pagination (normal mode)
+  // For Excel files: if sheets were found, wait for selection; if no sheets found, try loading anyway (DuckDB uses first sheet)
+  const excelSheetsLoaded = fileType === "excel" && excelSheets !== undefined
+  const excelCanLoad = fileType !== "excel" || (excelSheetsLoaded && (excelSheets.length === 0 || !!selectedTable))
+
   const { data: fileData, isLoading: isFileLoading, error: fileError } = trpc.files.previewDataFile.useQuery(
     {
       filePath: absolutePath,
@@ -462,8 +467,9 @@ export function DataViewerSidebar({
       enabled:
         !isQueryMode &&
         fileType !== "unknown" &&
+        !isLegacyXls &&
         (fileType !== "sqlite" || (!!selectedTable && selectedTable !== "")) &&
-        (fileType !== "excel" || (!!selectedTable && selectedTable !== "")),
+        excelCanLoad,
     }
   )
 
@@ -908,6 +914,26 @@ export function DataViewerSidebar({
     },
     [getCellContent]
   )
+
+  // Unsupported .xls format - show this immediately, don't try to load
+  if (isLegacyXls) {
+    return (
+      <div className="flex flex-col h-full">
+        <Header fileName={fileName} filePath={filePath} onClose={onClose} />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <p className="font-medium text-destructive">Unsupported file format</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Legacy Excel format (.xls) is not supported.
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Please convert to .xlsx format to view this file.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Error state
   if (error) {
