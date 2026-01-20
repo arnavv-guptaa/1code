@@ -7,14 +7,14 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 import { useTheme } from "next-themes"
 import { useAtom } from "jotai"
 import {
-  X,
   Loader2,
   AlertCircle,
-  FileText,
   Eye,
   Code,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 import {
   Tooltip,
   TooltipContent,
@@ -144,6 +144,7 @@ export function MarkdownViewer({
       <div className="flex flex-col h-full bg-background">
         <Header
           fileName={fileName}
+          filePath={filePath}
           byteLength={null}
           showPreview={showPreview}
           onToggleView={setShowPreview}
@@ -174,6 +175,7 @@ export function MarkdownViewer({
       <div className="flex flex-col h-full bg-background">
         <Header
           fileName={fileName}
+          filePath={filePath}
           byteLength={null}
           showPreview={showPreview}
           onToggleView={setShowPreview}
@@ -201,6 +203,7 @@ export function MarkdownViewer({
     <div className="flex flex-col h-full bg-background">
       <Header
         fileName={fileName}
+        filePath={filePath}
         byteLength={byteLength}
         showPreview={showPreview}
         onToggleView={setShowPreview}
@@ -265,21 +268,24 @@ export function MarkdownViewer({
  */
 function Header({
   fileName,
+  filePath,
   byteLength,
   showPreview,
   onToggleView,
   onClose,
 }: {
   fileName: string
+  filePath: string
   byteLength: number | null
   showPreview: boolean
   onToggleView: (show: boolean) => void
   onClose: () => void
 }) {
+  const Icon = getFileIconByExtension(filePath)
   return (
     <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        {Icon && <Icon className="h-4 w-4 flex-shrink-0" />}
         <span className="text-sm font-medium truncate">{fileName}</span>
         {byteLength !== null && (
           <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -326,11 +332,10 @@ function Header({
         {/* Close button */}
         <Button
           variant="ghost"
-          size="icon"
-          className="h-7 w-7 ml-1"
+          className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
           onClick={onClose}
         >
-          <X className="h-4 w-4" />
+          <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </div>
     </div>

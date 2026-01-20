@@ -3,13 +3,13 @@ import Editor from "@monaco-editor/react"
 import { useAtom } from "jotai"
 import { useTheme } from "next-themes"
 import {
-  X,
   Loader2,
   WrapText,
   AlertCircle,
-  RefreshCw,
+  FileWarning,
 } from "lucide-react"
 import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -22,7 +22,6 @@ import { useFileContent, getErrorMessage } from "../hooks/use-file-content"
 import { getMonacoLanguage, getFileViewerType } from "../utils/language-map"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
 import { ImageViewer } from "./image-viewer"
-import { PdfViewer } from "./pdf-viewer"
 import { MarkdownViewer } from "./markdown-viewer"
 import { HtmlViewer } from "./html-viewer"
 
@@ -77,30 +76,53 @@ function LoadingSpinner() {
  */
 function ErrorDisplay({
   error,
-  onRetry,
 }: {
   error: string
-  onRetry: () => void
 }) {
   return (
     <div className="flex-1 flex items-center justify-center p-4">
       <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
         <AlertCircle className="h-10 w-10 text-muted-foreground" />
-        <div>
-          <p className="font-medium text-foreground">{error}</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            The file cannot be displayed in the viewer.
-          </p>
+        <p className="font-medium text-foreground">{error}</p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Unsupported file viewer - for binary files, PDFs, etc.
+ */
+function UnsupportedViewer({
+  filePath,
+  onClose,
+}: {
+  filePath: string
+  onClose: () => void
+}) {
+  const fileName = getFileName(filePath)
+
+  return (
+    <div className="flex flex-col h-full bg-background">
+      <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <FileIcon filePath={filePath} />
+          <span className="text-sm font-medium truncate" title={filePath}>
+            {fileName}
+          </span>
         </div>
         <Button
-          variant="outline"
-          size="sm"
-          onClick={onRetry}
-          className="mt-2 gap-1.5"
+          variant="ghost"
+          className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
+          onClick={onClose}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Retry
+          <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
+      </div>
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
+          <FileWarning className="h-10 w-10 text-muted-foreground" />
+          <p className="font-medium text-foreground">Cannot view this file</p>
+        </div>
       </div>
     </div>
   )
@@ -160,11 +182,10 @@ function Header({
         {/* Close button */}
         <Button
           variant="ghost"
-          size="icon"
-          className="h-7 w-7"
+          className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
           onClick={onClose}
         >
-          <X className="h-4 w-4" />
+          <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </div>
     </div>
@@ -192,11 +213,10 @@ export function FileViewerSidebar({
           onClose={onClose}
         />
       )
-    case "pdf":
+    case "unsupported":
       return (
-        <PdfViewer
+        <UnsupportedViewer
           filePath={filePath}
-          projectPath={projectPath}
           onClose={onClose}
         />
       )
@@ -310,7 +330,7 @@ function CodeViewer({
           onToggleWordWrap={handleToggleWordWrap}
           onClose={onClose}
         />
-        <ErrorDisplay error={getErrorMessage(error)} onRetry={refetch} />
+        <ErrorDisplay error={getErrorMessage(error)} />
       </div>
     )
   }

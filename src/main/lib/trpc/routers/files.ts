@@ -20,6 +20,23 @@ import {
 
 const execAsync = promisify(exec)
 
+// Helper to recursively copy a directory
+async function copyDir(src: string, dest: string): Promise<void> {
+  await mkdir(dest, { recursive: true })
+  const entries = await readdir(src, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const srcPath = join(src, entry.name)
+    const destPath = join(dest, entry.name)
+
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath)
+    } else {
+      await copyFile(srcPath, destPath)
+    }
+  }
+}
+
 // Git status codes
 export type GitStatusCode =
   | "modified"      // M - modified
@@ -1069,6 +1086,190 @@ export const filesRouter = router({
         total: sourcePaths.length,
         imported: successCount,
         results,
+      }
+    }),
+
+  /**
+   * Copy files to a destination directory
+   * Handles name conflicts by appending " copy" or " copy 2", etc.
+   */
+  copyFiles: publicProcedure
+    .input(
+      z.object({
+        sourcePaths: z.array(z.string()),
+        targetDir: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { sourcePaths, targetDir } = input
+      const results: { source: string; dest: string; success: boolean; error?: string }[] = []
+
+      // Ensure target directory exists
+      try {
+        await mkdir(targetDir, { recursive: true })
+      } catch {
+        // Directory might already exist
+      }
+
+      for (const sourcePath of sourcePaths) {
+        const fileName = basename(sourcePath)
+        let destPath = join(targetDir, fileName)
+
+        try {
+          // Check source exists
+          const sourceStats = await stat(sourcePath)
+
+          // Handle name conflicts
+          let copyNumber = 0
+          const nameWithoutExt = fileName.includes(".")
+            ? fileName.slice(0, fileName.lastIndexOf("."))
+            : fileName
+          const ext = fileName.includes(".")
+            ? fileName.slice(fileName.lastIndexOf("."))
+            : ""
+
+          while (true) {
+            try {
+              await stat(destPath)
+              // File exists, try next name
+              copyNumber++
+              const suffix = copyNumber === 1 ? " copy" : ` copy ${copyNumber}`
+              destPath = join(targetDir, `${nameWithoutExt}${suffix}${ext}`)
+            } catch {
+              // File doesn't exist, we can use this name
+              break
+            }
+          }
+
+          if (sourceStats.isDirectory()) {
+            // Recursively copy directory
+            await copyDir(sourcePath, destPath)
+          } else {
+            await copyFile(sourcePath, destPath)
+          }
+          results.push({ source: sourcePath, dest: destPath, success: true })
+        } catch (error) {
+          console.error(`[files.copyFiles] Failed to copy ${sourcePath}:`, error)
+          results.push({
+            source: sourcePath,
+            dest: destPath,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length
+      return {
+        success: successCount > 0,
+        total: sourcePaths.length,
+        copied: successCount,
+        results,
+      }
+    }),
+
+  /**
+   * Delete multiple files or folders
+   */
+  deleteFiles: publicProcedure
+    .input(
+      z.object({
+        paths: z.array(z.string()),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { paths } = input
+      const results: { path: string; success: boolean; error?: string }[] = []
+
+      for (const filePath of paths) {
+        try {
+          await rm(filePath, { recursive: true, force: true })
+          results.push({ path: filePath, success: true })
+        } catch (error) {
+          console.error(`[files.deleteFiles] Failed to delete ${filePath}:`, error)
+          results.push({
+            path: filePath,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length
+      return {
+        success: successCount > 0,
+        total: paths.length,
+        deleted: successCount,
+        results,
+      }
+    }),
+
+  /**
+   * Create a new empty file
+   */
+  createFile: publicProcedure
+    .input(
+      z.object({
+        filePath: z.string(),
+        content: z.string().optional().default(""),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { filePath, content } = input
+      try {
+        // Ensure parent directory exists
+        const parentDir = filePath.substring(0, filePath.lastIndexOf("/"))
+        if (parentDir) {
+          await mkdir(parentDir, { recursive: true })
+        }
+
+        // Check if file already exists
+        try {
+          await stat(filePath)
+          throw new Error("File already exists")
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err
+          }
+        }
+
+        // Create the file
+        const { writeFile } = await import("node:fs/promises")
+        await writeFile(filePath, content, "utf-8")
+        return { success: true, path: filePath }
+      } catch (error) {
+        console.error("[files.createFile] Error:", error)
+        throw new Error(`Failed to create file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
+
+  /**
+   * Create a new folder
+   */
+  createFolder: publicProcedure
+    .input(
+      z.object({
+        folderPath: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { folderPath } = input
+      try {
+        // Check if folder already exists
+        try {
+          await stat(folderPath)
+          throw new Error("Folder already exists")
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err
+          }
+        }
+
+        await mkdir(folderPath, { recursive: true })
+        return { success: true, path: folderPath }
+      } catch (error) {
+        console.error("[files.createFolder] Error:", error)
+        throw new Error(`Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }),
 })

@@ -58,7 +58,7 @@ const STATUS_COLORS: Record<string, string> = {
   renamed: "text-green-500 dark:text-green-400",         // Green for renamed
   copied: "text-green-500 dark:text-green-400",          // Green for copied
   untracked: "text-green-600 dark:text-green-500",       // Darker green for untracked
-  ignored: "text-muted-foreground/50",                   // Dimmed for ignored
+  ignored: "text-muted-foreground",                      // Muted for ignored (same as file names)
   unmerged: "text-red-600 dark:text-red-500",            // Red for conflicts
 }
 
@@ -138,6 +138,30 @@ interface FileTreeNodeRowProps {
   onDragEnterFolder?: (folderPath: string) => void
   onDragLeaveFolder?: () => void
   searchQuery?: string
+  /** Whether this item is selected */
+  isSelected?: boolean
+  /** Whether this item is in the multi-selection set */
+  isInMultiSelect?: boolean
+  /** Whether this item is cut (for visual feedback) */
+  isCut?: boolean
+  /** Click handler with modifier key support for selection */
+  onSelect?: (path: string, event: React.MouseEvent) => void
+  /** Context menu: Whether clipboard has items */
+  hasClipboard?: boolean
+  /** Context menu: Cut handler */
+  onCut?: () => void
+  /** Context menu: Copy handler */
+  onCopy?: () => void
+  /** Context menu: Paste handler */
+  onPaste?: () => void
+  /** Context menu: Duplicate handler */
+  onDuplicate?: () => void
+  /** Context menu: New file handler */
+  onNewFile?: () => void
+  /** Context menu: New folder handler */
+  onNewFolder?: () => void
+  /** All selected paths for multi-drag support */
+  selectedPaths?: Set<string>
 }
 
 /**
@@ -161,6 +185,18 @@ export const FileTreeNodeRow = memo(function FileTreeNodeRow({
   onDragEnterFolder,
   onDragLeaveFolder,
   searchQuery,
+  isSelected = false,
+  isInMultiSelect = false,
+  isCut = false,
+  onSelect,
+  hasClipboard,
+  onCut,
+  onCopy,
+  onPaste,
+  onDuplicate,
+  onNewFile,
+  onNewFolder,
+  selectedPaths,
 }: FileTreeNodeRowProps) {
   const hasChildren = node.type === "folder" && node.children.length > 0
   const isDropTarget = node.type === "folder" && dropTargetPath === node.path
@@ -188,28 +224,58 @@ export const FileTreeNodeRow = memo(function FileTreeNodeRow({
     return false
   }, [node.path, statusCode, gitStatus])
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Always update selection
+    onSelect?.(node.path, e)
+
     if (node.type === "folder") {
-      onToggleFolder(node.path)
-    } else {
-      // Determine if this is a data file or source file
-      if (isDataFile(node.name)) {
-        onSelectDataFile?.(node.path)
-      } else {
-        onSelectSourceFile?.(node.path)
+      // For folders, toggle on regular click (not Cmd/Shift click for multi-select)
+      if (!e.metaKey && !e.shiftKey) {
+        onToggleFolder(node.path)
       }
-      // Also call legacy onSelectFile for backwards compatibility
-      onSelectFile?.(node.path)
+    } else {
+      // For files, open them on regular click (not multi-select)
+      if (!e.metaKey && !e.shiftKey) {
+        // Determine if this is a data file or source file
+        if (isDataFile(node.name)) {
+          onSelectDataFile?.(node.path)
+        } else {
+          onSelectSourceFile?.(node.path)
+        }
+        // Also call legacy onSelectFile for backwards compatibility
+        onSelectFile?.(node.path)
+      }
     }
-  }, [node.type, node.path, node.name, onToggleFolder, onSelectDataFile, onSelectSourceFile, onSelectFile])
+  }, [node.type, node.path, node.name, onToggleFolder, onSelectDataFile, onSelectSourceFile, onSelectFile, onSelect])
 
   // Make files/folders draggable for internal drag-and-drop
   const handleDragStart = useCallback((e: React.DragEvent) => {
+    // Multi-drag: If this item is selected and there are multiple selections, drag all
+    const pathsToDrag = selectedPaths && selectedPaths.has(node.path) && selectedPaths.size > 1
+      ? Array.from(selectedPaths)
+      : [node.path]
+
+    // Store paths as JSON array for multi-drag support
+    e.dataTransfer.setData("application/x-file-tree-paths", JSON.stringify(pathsToDrag))
+    // Keep single path for backwards compatibility
     e.dataTransfer.setData("application/x-file-tree-path", node.path)
     e.dataTransfer.setData("application/x-file-tree-type", node.type)
-    e.dataTransfer.setData("text/plain", node.path)
+    e.dataTransfer.setData("text/plain", pathsToDrag.join("\n"))
     e.dataTransfer.effectAllowed = "copyMove"
-  }, [node.path, node.type])
+
+    // Create a custom drag image showing count for multi-drag
+    if (pathsToDrag.length > 1) {
+      const dragImage = document.createElement("div")
+      dragImage.className = "bg-background border border-border rounded-md px-2 py-1 text-xs shadow-md flex items-center gap-1.5"
+      dragImage.innerHTML = `<span>${pathsToDrag.length} items</span>`
+      dragImage.style.position = "absolute"
+      dragImage.style.top = "-1000px"
+      document.body.appendChild(dragImage)
+      e.dataTransfer.setDragImage(dragImage, 0, 0)
+      // Clean up after drag starts
+      setTimeout(() => document.body.removeChild(dragImage), 0)
+    }
+  }, [node.path, node.type, selectedPaths])
 
   // Drag and drop handlers for folders
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -256,9 +322,28 @@ export const FileTreeNodeRow = memo(function FileTreeNodeRow({
       e.preventDefault()
       e.stopPropagation()
 
-      const internalPath = e.dataTransfer.getData("application/x-file-tree-path")
+      // Check for multi-drag first (JSON array of paths)
+      const multiPathsJson = e.dataTransfer.getData("application/x-file-tree-paths")
       const internalType = e.dataTransfer.getData("application/x-file-tree-type")
 
+      if (multiPathsJson) {
+        try {
+          const internalPaths = JSON.parse(multiPathsJson) as string[]
+          // Filter out paths that would be dropped into themselves or their children
+          const validPaths = internalPaths.filter(
+            p => p !== node.path && !node.path.startsWith(p + "/")
+          )
+          if (validPaths.length > 0) {
+            onDropFiles?.(node.path, validPaths, true)
+          }
+          return
+        } catch {
+          // Fall back to single path
+        }
+      }
+
+      // Fall back to single path for backwards compatibility
+      const internalPath = e.dataTransfer.getData("application/x-file-tree-path")
       if (internalPath && internalType) {
         if (internalPath === node.path || node.path.startsWith(internalPath + "/")) {
           return
@@ -304,6 +389,10 @@ export const FileTreeNodeRow = memo(function FileTreeNodeRow({
               "hover:bg-accent/50 cursor-pointer transition-colors text-xs",
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               isDropTarget && "bg-primary/20 ring-1 ring-primary",
+              // Selection styling
+              (isSelected || isInMultiSelect) && "bg-accent",
+              // Cut items appear dimmed
+              isCut && "opacity-50",
             )}
             style={{ paddingLeft: `${paddingLeft}px`, paddingRight: "6px" }}
           >
@@ -373,6 +462,13 @@ export const FileTreeNodeRow = memo(function FileTreeNodeRow({
             path={node.path}
             type={node.type}
             projectPath={projectPath}
+            hasClipboard={hasClipboard}
+            onCut={onCut}
+            onCopy={onCopy}
+            onPaste={onPaste}
+            onDuplicate={onDuplicate}
+            onNewFile={onNewFile}
+            onNewFolder={onNewFolder}
           />
         )}
       </ContextMenu>

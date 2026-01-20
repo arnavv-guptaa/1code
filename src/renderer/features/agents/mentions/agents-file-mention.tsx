@@ -90,6 +90,10 @@ import {
   ParquetIcon,
   ExcelIcon,
   ArrowDataIcon,
+  PDFIcon,
+  ImageFileIcon,
+  WordIcon,
+  PowerPointIcon,
 } from "../../../icons/framework-icons"
 
 interface ChangedFile {
@@ -188,6 +192,21 @@ const KNOWN_FILE_ICON_EXTENSIONS = new Set([
   "arrow",
   "feather",
   "ipc",
+  // Document file extensions
+  "pdf",
+  "doc",
+  "docx",
+  "ppt",
+  "pptx",
+  // Image file extensions
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "svg",
+  "webp",
+  "ico",
+  "bmp",
 ])
 
 // Get file icon component based on file extension
@@ -344,6 +363,27 @@ export function getFileIconByExtension(
     case "feather":
     case "ipc":
       return ArrowDataIcon
+    // Document file types
+    case "pdf":
+      return PDFIcon
+    case "doc":
+    case "docx":
+      return WordIcon
+    case "ppt":
+    case "pptx":
+      return PowerPointIcon
+    // Image file types
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "webp":
+    case "ico":
+    case "bmp":
+      return ImageFileIcon
+    case "svg":
+      // SVG already returns HTMLIcon (XML-like), keep it or use ImageFileIcon
+      return ImageFileIcon
     default:
       return returnNullForUnknown ? null : FilesIcon
   }

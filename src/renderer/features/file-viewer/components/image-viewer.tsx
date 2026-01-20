@@ -1,12 +1,9 @@
 import { useMemo } from "react"
-import { X, Loader2, AlertCircle, ExternalLink, ImageIcon } from "lucide-react"
+import { Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { IconCloseSidebarRight } from "@/components/ui/icons"
 import { trpc } from "@/lib/trpc"
+import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 
 interface ImageViewerProps {
   filePath: string
@@ -52,17 +49,15 @@ export function ImageViewer({
     { staleTime: 60000 } // Cache for 1 minute
   )
 
-  // Open in system viewer
-  const handleOpenExternal = () => {
-    window.desktopApi?.openPath(absolutePath)
-  }
-
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <ImageIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          {(() => {
+            const Icon = getFileIconByExtension(filePath)
+            return Icon ? <Icon className="h-4 w-4 flex-shrink-0" /> : null
+          })()}
           <span className="text-sm font-medium truncate" title={filePath}>
             {fileName}
           </span>
@@ -73,28 +68,13 @@ export function ImageViewer({
           )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Open externally */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleOpenExternal}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Open in system viewer</TooltipContent>
-          </Tooltip>
           {/* Close button */}
           <Button
             variant="ghost"
-            size="icon"
-            className="h-7 w-7"
+            className="h-6 w-6 p-0 hover:bg-muted transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] rounded-md ml-1"
             onClick={onClose}
           >
-            <X className="h-4 w-4" />
+            <IconCloseSidebarRight className="h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         </div>
       </div>
@@ -133,15 +113,6 @@ export function ImageViewer({
                   : "The file could not be found."}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenExternal}
-              className="mt-2 gap-1.5"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open externally
-            </Button>
           </div>
         )}
 

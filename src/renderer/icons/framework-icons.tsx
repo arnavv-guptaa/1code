@@ -1515,3 +1515,95 @@ export function CodeIcon({ className }: FrameworkIconProps) {
     </svg>
   )
 }
+
+// PDF Icon - Red document with PDF text
+export function PDFIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#E53935"
+      />
+      <path
+        d="M8 13H16M8 16H14"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <rect x="7" y="6" width="10" height="4" rx="1" fill="white" />
+      <text x="12" y="9.5" textAnchor="middle" fill="#E53935" fontSize="3" fontWeight="bold">PDF</text>
+    </svg>
+  )
+}
+
+// Image Icon - Picture/photo icon
+export function ImageFileIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#4CAF50" />
+      <circle cx="8.5" cy="8.5" r="2" fill="#FFF59D" />
+      <path
+        d="M21 15L16.5 10.5C16.1 10.1 15.5 10.1 15.1 10.5L10 15.6L8.4 14C8 13.6 7.4 13.6 7 14L3 18V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V15Z"
+        fill="#81C784"
+      />
+    </svg>
+  )
+}
+
+// Word Icon - Blue document with W
+export function WordIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#2196F3"
+      />
+      <path
+        d="M8 8L10 16L12 10L14 16L16 8"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// PowerPoint Icon - Orange/red document with P
+export function PowerPointIcon({ className }: FrameworkIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn("w-4 h-4", className)}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7 2H17C18.1046 2 19 2.89543 19 4V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V4C5 2.89543 5.89543 2 7 2Z"
+        fill="#FF5722"
+      />
+      <path
+        d="M9 7V17M9 7H13C14.6569 7 16 8.34315 16 10C16 11.6569 14.6569 13 13 13H9"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
