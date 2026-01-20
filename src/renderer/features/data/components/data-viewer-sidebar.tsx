@@ -859,15 +859,19 @@ export function DataViewerSidebar({
 
   // Error state
   if (error) {
+    // Check if it's a file not found error
+    const isNotFound = error.message?.toLowerCase().includes("enoent") ||
+                       error.message?.toLowerCase().includes("not found") ||
+                       error.message?.toLowerCase().includes("no such file")
+    const errorMessage = isNotFound ? "File not found" : "Failed to load file"
+
     return (
       <div className="flex flex-col h-full">
         <Header fileName={fileName} filePath={filePath} onClose={onClose} />
         <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center text-destructive">
-            <p className="font-medium">Failed to load file</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {error.message}
-            </p>
+          <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <p className="font-medium text-foreground">{errorMessage}</p>
           </div>
         </div>
       </div>

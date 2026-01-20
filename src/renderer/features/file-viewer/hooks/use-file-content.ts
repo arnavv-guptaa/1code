@@ -93,10 +93,15 @@ export function useFileContent(
 
     if (error) {
       console.error("[useFileContent] Query error:", error)
+      // Check if it's a file not found error
+      const errorMessage = error.message?.toLowerCase() || ""
+      const isNotFound = errorMessage.includes("enoent") ||
+                         errorMessage.includes("not found") ||
+                         errorMessage.includes("no such file")
       return {
         content: null,
         isLoading: false,
-        error: "unknown",
+        error: isNotFound ? "not-found" : "unknown",
         byteLength: null,
         refetch,
       }

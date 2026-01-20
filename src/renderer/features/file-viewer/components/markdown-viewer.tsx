@@ -162,14 +162,20 @@ export function MarkdownViewer({
 
   // Error state
   if (error || (data && !data.ok)) {
-    const errorMessage =
-      data && !data.ok
-        ? data.reason === "too-large"
-          ? "File too large"
-          : data.reason === "binary"
-          ? "Binary file"
-          : "File not found"
-        : "Failed to load file"
+    let errorMessage = "Failed to load file"
+    if (data && !data.ok) {
+      errorMessage = data.reason === "too-large"
+        ? "File too large"
+        : data.reason === "binary"
+        ? "Binary file"
+        : "File not found"
+    } else if (error) {
+      const errMsg = error.message?.toLowerCase() || ""
+      const isNotFound = errMsg.includes("enoent") ||
+                         errMsg.includes("not found") ||
+                         errMsg.includes("no such file")
+      errorMessage = isNotFound ? "File not found" : "Failed to load file"
+    }
 
     return (
       <div className="flex flex-col h-full bg-background">
@@ -184,12 +190,7 @@ export function MarkdownViewer({
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
             <AlertCircle className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-foreground">{errorMessage}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                The file cannot be displayed.
-              </p>
-            </div>
+            <p className="font-medium text-foreground">{errorMessage}</p>
           </div>
         </div>
       </div>

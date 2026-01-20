@@ -236,7 +236,7 @@ export function isDataFile(filePath: string): boolean {
 /**
  * File viewer type - determines which viewer component to use
  */
-export type FileViewerType = "code" | "image" | "markdown" | "html" | "unsupported"
+export type FileViewerType = "code" | "image" | "markdown" | "unsupported"
 
 /**
  * Image file extensions

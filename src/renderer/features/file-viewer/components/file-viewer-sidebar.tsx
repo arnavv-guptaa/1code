@@ -23,7 +23,6 @@ import { getMonacoLanguage, getFileViewerType } from "../utils/language-map"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
 import { ImageViewer } from "./image-viewer"
 import { MarkdownViewer } from "./markdown-viewer"
-import { HtmlViewer } from "./html-viewer"
 
 interface FileViewerSidebarProps {
   chatId: string
@@ -223,14 +222,6 @@ export function FileViewerSidebar({
     case "markdown":
       return (
         <MarkdownViewer
-          filePath={filePath}
-          projectPath={projectPath}
-          onClose={onClose}
-        />
-      )
-    case "html":
-      return (
-        <HtmlViewer
           filePath={filePath}
           projectPath={projectPath}
           onClose={onClose}

@@ -88,17 +88,18 @@ export function ImageViewer({
           </div>
         )}
 
-        {error && (
-          <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
-            <AlertCircle className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-foreground">Failed to load image</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {error.message}
-              </p>
+        {error && (() => {
+          const isNotFound = error.message?.toLowerCase().includes("enoent") ||
+                             error.message?.toLowerCase().includes("not found") ||
+                             error.message?.toLowerCase().includes("no such file")
+          const errorMessage = isNotFound ? "File not found" : "Failed to load image"
+          return (
+            <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
+              <AlertCircle className="h-10 w-10 text-muted-foreground" />
+              <p className="font-medium text-foreground">{errorMessage}</p>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {data && !data.ok && (
           <div className="flex flex-col items-center gap-3 text-center max-w-[300px]">
