@@ -957,6 +957,11 @@ export function FileTreeSidebar({
       setFileClipboard,
       copyFilesMutation,
       dropTarget.type,
+      virtualizer,
+      expandedFolders,
+      setExpandedFolders,
+      setSelectedPath,
+      setSelectedPaths,
     ]
   )
 
