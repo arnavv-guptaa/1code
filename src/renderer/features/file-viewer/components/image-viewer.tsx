@@ -4,28 +4,12 @@ import { Button } from "@/components/ui/button"
 import { IconCloseSidebarRight } from "@/components/ui/icons"
 import { trpc } from "@/lib/trpc"
 import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
+import { getFileName, formatFileSize } from "../utils/file-utils"
 
 interface ImageViewerProps {
   filePath: string
   projectPath: string
   onClose: () => void
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
-}
-
-/**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 /**

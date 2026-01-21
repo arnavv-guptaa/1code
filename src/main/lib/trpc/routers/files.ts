@@ -2,7 +2,7 @@ import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { readdir, stat, readFile, rm, rename, copyFile, mkdir } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
-import { join, relative, basename } from "node:path"
+import { join, relative, basename, resolve, isAbsolute } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { EventEmitter } from "node:events"
 import { exec } from "node:child_process"
@@ -19,6 +19,22 @@ import {
 } from "../../parsers"
 
 const execAsync = promisify(exec)
+
+/**
+ * Validate that a file path is within a base directory
+ * Prevents path traversal attacks (e.g., ../../etc/passwd)
+ */
+function validatePathWithinDirectory(basePath: string, filePath: string): string {
+  const resolvedBase = resolve(basePath)
+  const resolvedPath = isAbsolute(filePath) ? resolve(filePath) : resolve(basePath, filePath)
+
+  // Check if the resolved path starts with the base path
+  if (!resolvedPath.startsWith(resolvedBase + "/") && resolvedPath !== resolvedBase) {
+    throw new Error("Path traversal attempt detected: file path must be within project directory")
+  }
+
+  return resolvedPath
+}
 
 // Helper to recursively copy a directory
 async function copyDir(src: string, dest: string): Promise<void> {
@@ -609,7 +625,8 @@ export const filesRouter = router({
       }
 
       try {
-        const fullPath = join(projectPath, folderPath)
+        // Validate path is within project directory (prevents path traversal)
+        const fullPath = validatePathWithinDirectory(projectPath, folderPath)
 
         // Verify the path exists and is a directory
         const pathStat = await stat(fullPath)

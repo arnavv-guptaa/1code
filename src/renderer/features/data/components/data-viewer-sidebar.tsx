@@ -72,9 +72,11 @@ import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
 import { selectedSqliteTableAtomFamily } from "../../agents/atoms"
 import { useTheme } from "next-themes"
+import { toast } from "sonner"
+import { ViewerErrorBoundary } from "@/components/ui/error-boundary"
+import { getFileName, getFileExtension } from "../../file-viewer/utils/file-utils"
 
 interface DataViewerSidebarProps {
-  chatId: string
   filePath: string
   projectPath: string
   onClose: () => void
@@ -150,14 +152,6 @@ function clearQueryHistory(filePath: string): void {
 }
 
 /**
- * Get the file extension
- */
-function getFileExtension(filePath: string): string {
-  const parts = filePath.split(".")
-  return parts.length > 1 ? `.${parts[parts.length - 1].toLowerCase()}` : ""
-}
-
-/**
  * Get file type from extension
  */
 function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | "excel" | "arrow" | "unknown" {
@@ -194,14 +188,6 @@ function getFileType(filePath: string): "csv" | "json" | "sqlite" | "parquet" | 
 function FileIcon({ filePath }: { filePath: string }) {
   const Icon = getFileIconByExtension(filePath)
   return Icon ? <Icon className="h-4 w-4" /> : null
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
 }
 
 /**
@@ -245,8 +231,21 @@ function isJsonLike(value: unknown): boolean {
   return false
 }
 
-export function DataViewerSidebar({
-  chatId,
+/**
+ * DataViewerSidebar with error boundary wrapper
+ */
+export function DataViewerSidebar(props: DataViewerSidebarProps) {
+  return (
+    <ViewerErrorBoundary viewerType="data" onReset={props.onClose}>
+      <DataViewerSidebarInner {...props} />
+    </ViewerErrorBoundary>
+  )
+}
+
+/**
+ * Inner DataViewerSidebar component
+ */
+function DataViewerSidebarInner({
   filePath,
   projectPath,
   onClose,
@@ -255,7 +254,7 @@ export function DataViewerSidebar({
   const fileName = getFileName(filePath)
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
-  const gridRef = useRef<any>(null)
+  const gridRef = useRef<ReturnType<typeof DataEditor> | null>(null)
 
   // ============ Pagination State ============
   const [pageSize, setPageSize] = useState<PageSize>(1000)
@@ -455,40 +454,54 @@ export function DataViewerSidebar({
   const [queryData, setQueryData] = useState<typeof fileData | null>(null)
   const [isQueryLoading, setIsQueryLoading] = useState(false)
 
-  // Query mutation for SQL queries
-  const queryMutation = trpc.files.queryDataFile.useMutation({
-    onSuccess: (result) => {
-      setQueryData(result)
-      setQueryError(null)
-      setIsQueryLoading(false)
-      // Reset column state for new query results
-      if (result.columns) {
-        setColumnOrder(result.columns.map((_, i) => i))
-        setHiddenColumns(new Set())
-        setSortColumn(null)
-      }
-    },
-    onError: (err) => {
-      setQueryError(err.message)
-      setIsQueryLoading(false)
-    },
-  })
+  // Track query request ID to prevent race conditions
+  const queryRequestIdRef = useRef(0)
 
-  // Execute SQL query
-  const executeQuery = useCallback(() => {
+  // Query mutation for SQL queries
+  const queryMutation = trpc.files.queryDataFile.useMutation()
+
+  // Execute SQL query with race condition protection
+  const executeQuery = useCallback(async () => {
     if (!sqlQuery.trim()) return
+
+    // Increment request ID to track this specific request
+    const requestId = ++queryRequestIdRef.current
+
     setIsQueryLoading(true)
     setQueryError(null)
     setIsQueryMode(true)
     setShowHistory(false)
+
     // Save to history
     const newHistory = saveQueryToHistory(absolutePath, sqlQuery)
     setQueryHistory(newHistory)
-    queryMutation.mutate({
-      filePath: absolutePath,
-      sql: sqlQuery,
-      sheetName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
-    })
+
+    try {
+      const result = await queryMutation.mutateAsync({
+        filePath: absolutePath,
+        sql: sqlQuery,
+        sheetName: (fileType === "sqlite" || fileType === "excel") ? selectedTable || undefined : undefined,
+      })
+
+      // Only update state if this is still the latest request
+      if (requestId === queryRequestIdRef.current) {
+        setQueryData(result)
+        setQueryError(null)
+        setIsQueryLoading(false)
+        // Reset column state for new query results
+        if (result.columns) {
+          setColumnOrder(result.columns.map((_, i) => i))
+          setHiddenColumns(new Set())
+          setSortColumn(null)
+        }
+      }
+    } catch (err) {
+      // Only update error state if this is still the latest request
+      if (requestId === queryRequestIdRef.current) {
+        setQueryError(err instanceof Error ? err.message : "Query failed")
+        setIsQueryLoading(false)
+      }
+    }
   }, [sqlQuery, absolutePath, fileType, selectedTable, queryMutation])
 
   // Load query from history
@@ -687,12 +700,12 @@ export function DataViewerSidebar({
 
   // Cell context menu handler
   const onCellContextMenu = useCallback(
-    (cell: Item, event: any) => {
+    (cell: Item, event: { preventDefault?: () => void; bounds?: Rectangle; clientX?: number; clientY?: number }) => {
       event.preventDefault?.()
-      const bounds = event.bounds || { x: event.clientX, y: event.clientY }
+      const bounds = event.bounds || { x: event.clientX ?? 0, y: event.clientY ?? 0 }
       setCellMenuPosition({
-        x: bounds.x ?? event.clientX ?? 0,
-        y: bounds.y ?? event.clientY ?? 0,
+        x: bounds.x ?? 0,
+        y: bounds.y ?? 0,
         cell,
       })
     },
@@ -734,7 +747,7 @@ export function DataViewerSidebar({
   }, [])
 
   // Copy cell value to clipboard
-  const handleCopyCellValue = useCallback(() => {
+  const handleCopyCellValue = useCallback(async () => {
     if (!cellMenuPosition) return
     const [col, row] = cellMenuPosition.cell
     const column = orderedColumns[col]
@@ -745,7 +758,13 @@ export function DataViewerSidebar({
     const value = rowData?.[colName]
     const stringValue = formatCellValue(value)
 
-    navigator.clipboard.writeText(stringValue)
+    try {
+      await navigator.clipboard.writeText(stringValue)
+      toast.success("Copied to clipboard")
+    } catch (err) {
+      console.error("Failed to copy:", err)
+      toast.error("Failed to copy to clipboard")
+    }
     setCellMenuPosition(null)
   }, [cellMenuPosition, orderedColumns, sortedRows])
 
@@ -1358,11 +1377,17 @@ export function DataViewerSidebar({
                         variant="ghost"
                         size="icon"
                         className="absolute top-2 right-2 h-7 w-7 hover:bg-foreground/10"
-                        onClick={() => {
+                        onClick={async () => {
                           const text = isJsonLike(cellDetailsContent.value)
                             ? formatJsonForDisplay(cellDetailsContent.value)
                             : formatCellValue(cellDetailsContent.value)
-                          navigator.clipboard.writeText(text)
+                          try {
+                            await navigator.clipboard.writeText(text)
+                            toast.success("Copied to clipboard")
+                          } catch (err) {
+                            console.error("Failed to copy:", err)
+                            toast.error("Failed to copy to clipboard")
+                          }
                         }}
                       >
                         <Copy className="h-3.5 w-3.5" />

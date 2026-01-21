@@ -18,36 +18,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { ViewerErrorBoundary } from "@/components/ui/error-boundary"
 import { cn } from "@/lib/utils"
 import { fileViewerWordWrapAtom } from "../../agents/atoms"
 import { useFileContent, getErrorMessage } from "../hooks/use-file-content"
 import { getMonacoLanguage, getFileViewerType } from "../utils/language-map"
+import { getFileName, formatFileSize } from "../utils/file-utils"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
 import { ImageViewer } from "./image-viewer"
 import { MarkdownViewer } from "./markdown-viewer"
 
 interface FileViewerSidebarProps {
-  chatId: string
   filePath: string
   projectPath: string
   onClose: () => void
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
-}
-
-/**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 /**
@@ -232,9 +216,9 @@ function Header({
 
 /**
  * FileViewerSidebar - Routes to appropriate viewer based on file type
+ * Wrapped with error boundaries for crash protection
  */
 export function FileViewerSidebar({
-  chatId,
   filePath,
   projectPath,
   onClose,
@@ -242,14 +226,17 @@ export function FileViewerSidebar({
   const viewerType = getFileViewerType(filePath)
 
   // Route to specialized viewers for non-code files
+  // Each viewer is wrapped in an error boundary for crash protection
   switch (viewerType) {
     case "image":
       return (
-        <ImageViewer
-          filePath={filePath}
-          projectPath={projectPath}
-          onClose={onClose}
-        />
+        <ViewerErrorBoundary viewerType="image" onReset={onClose}>
+          <ImageViewer
+            filePath={filePath}
+            projectPath={projectPath}
+            onClose={onClose}
+          />
+        </ViewerErrorBoundary>
       )
     case "unsupported":
       return (
@@ -260,19 +247,23 @@ export function FileViewerSidebar({
       )
     case "markdown":
       return (
-        <MarkdownViewer
-          filePath={filePath}
-          projectPath={projectPath}
-          onClose={onClose}
-        />
+        <ViewerErrorBoundary viewerType="markdown" onReset={onClose}>
+          <MarkdownViewer
+            filePath={filePath}
+            projectPath={projectPath}
+            onClose={onClose}
+          />
+        </ViewerErrorBoundary>
       )
     default:
       return (
-        <CodeViewer
-          filePath={filePath}
-          projectPath={projectPath}
-          onClose={onClose}
-        />
+        <ViewerErrorBoundary viewerType="file" onReset={onClose}>
+          <CodeViewer
+            filePath={filePath}
+            projectPath={projectPath}
+            onClose={onClose}
+          />
+        </ViewerErrorBoundary>
       )
   }
 }

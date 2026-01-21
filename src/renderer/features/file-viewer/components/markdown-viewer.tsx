@@ -26,28 +26,12 @@ import { cn } from "@/lib/utils"
 import { trpc } from "@/lib/trpc"
 import { fileViewerWordWrapAtom } from "../../agents/atoms"
 import { defaultEditorOptions, getMonacoTheme } from "./monaco-config"
+import { getFileName, formatFileSize } from "../utils/file-utils"
 
 interface MarkdownViewerProps {
   filePath: string
   projectPath: string
   onClose: () => void
-}
-
-/**
- * Get file name from path
- */
-function getFileName(filePath: string): string {
-  const parts = filePath.split("/")
-  return parts[parts.length - 1] || filePath
-}
-
-/**
- * Format file size for display
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 /**
@@ -131,7 +115,7 @@ export function MarkdownViewer({
 
   // Code block renderer for syntax highlighting
   const codeComponent = useCallback(
-    ({ className, children, node, ...props }: any) => {
+    ({ className, children, node, ...props }: { className?: string; children?: React.ReactNode; node?: { position?: unknown; tagName?: string } } & React.HTMLAttributes<HTMLElement>) => {
       const match = /language-(\w+)/.exec(className || "")
       // Check if this is inside a <pre> tag (code block) vs inline
       const isCodeBlock = node?.position && node?.tagName === "code" &&
@@ -176,7 +160,7 @@ export function MarkdownViewer({
 
   // Pre block wrapper for code blocks without language
   const preComponent = useCallback(
-    ({ children, ...props }: any) => {
+    ({ children }: { children?: React.ReactNode }) => {
       // Just pass through - the code component handles styling
       return <>{children}</>
     },
