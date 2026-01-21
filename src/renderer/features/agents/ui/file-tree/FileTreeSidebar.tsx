@@ -98,9 +98,19 @@ export function FileTreeSidebar({
   const [newItemName, setNewItemName] = useState("")
   const [newItemTargetDir, setNewItemTargetDir] = useState<string | null>(null)
 
-  // Search state
+  // Search state with debouncing for performance
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Debounce search query to avoid filtering on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 150) // 150ms debounce
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   // Drag and drop state - unified to ensure mutual exclusivity
   const [dropTarget, setDropTarget] = useState<DropTarget>({ type: "none" })
@@ -162,10 +172,10 @@ export function FileTreeSidebar({
   // Build tree from entries (all files are loaded upfront like VS Code)
   const tree = useMemo(() => buildFileTree(entries), [entries])
 
-  // Filter tree based on search query
+  // Filter tree based on debounced search query (for performance)
   const filteredTree = useMemo(
-    () => filterTree(tree, searchQuery),
-    [tree, searchQuery]
+    () => filterTree(tree, debouncedSearchQuery),
+    [tree, debouncedSearchQuery]
   )
 
   // Flatten visible tree for virtualization (only expanded nodes)
