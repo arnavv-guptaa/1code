@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Eye,
   Code,
+  Copy,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { IconCloseSidebarRight } from "@/components/ui/icons"
@@ -209,6 +211,7 @@ export function MarkdownViewer({
         showPreview={showPreview}
         onToggleView={setShowPreview}
         onClose={onClose}
+        content={content}
       />
 
       {/* Content */}
@@ -274,6 +277,7 @@ function Header({
   showPreview,
   onToggleView,
   onClose,
+  content,
 }: {
   fileName: string
   filePath: string
@@ -281,8 +285,22 @@ function Header({
   showPreview: boolean
   onToggleView: (show: boolean) => void
   onClose: () => void
+  content?: string
 }) {
   const Icon = getFileIconByExtension(filePath)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }, [content])
+
   return (
     <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -295,6 +313,28 @@ function Header({
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Copy file content */}
+        {content && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleCopy}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {copied ? "Copied!" : "Copy file content"}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {/* View toggle */}
         <div className="flex items-center rounded-md border bg-muted/50 p-0.5">
           <Tooltip>

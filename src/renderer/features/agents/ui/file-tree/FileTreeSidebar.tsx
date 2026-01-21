@@ -590,7 +590,49 @@ export function FileTreeSidebar({
   // Container ref for focus management
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Handle paste events for file import
+  // Helper to compute target dir based on selection
+  const getTargetDirFromSelection = useCallback((): string => {
+    if (!projectPath) return ""
+    if (!selectedPath) return projectPath
+
+    // Helper to compute target dir from a node
+    const computeTargetDir = (nodePath: string, nodeType: "file" | "folder"): string => {
+      if (nodeType === "folder") {
+        return `${projectPath}/${nodePath}`
+      }
+      // For files, use parent directory
+      const parentPath = nodePath.includes("/")
+        ? nodePath.substring(0, nodePath.lastIndexOf("/"))
+        : ""
+      return parentPath ? `${projectPath}/${parentPath}` : projectPath
+    }
+
+    // Find the selected node to check if it's a folder
+    const selectedNode = flattenedNodes.find(n => n.node.path === selectedPath)
+    if (selectedNode) {
+      return computeTargetDir(selectedPath, selectedNode.node.type)
+    }
+
+    // Node not found in visible tree - check the full tree
+    const checkNodeType = (nodes: typeof filteredTree): "file" | "folder" | null => {
+      for (const n of nodes) {
+        if (n.path === selectedPath) return n.type
+        if (n.type === "folder" && n.children) {
+          const found = checkNodeType(n.children)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const nodeType = checkNodeType(filteredTree)
+    if (nodeType) {
+      return computeTargetDir(selectedPath, nodeType)
+    }
+
+    return projectPath
+  }, [projectPath, selectedPath, flattenedNodes, filteredTree])
+
+  // Handle paste events for file import (external files from Finder/Explorer)
   const handlePaste = useCallback(
     async (e: ClipboardEvent) => {
       if (!projectPath) return
@@ -605,10 +647,12 @@ export function FileTreeSidebar({
 
       if (filePaths.length > 0) {
         e.preventDefault()
-        importFilesToDir(projectPath, filePaths)
+        // Use selected folder as target, or project root if nothing selected
+        const targetDir = getTargetDirFromSelection()
+        importFilesToDir(targetDir, filePaths)
       }
     },
-    [projectPath, importFilesToDir]
+    [projectPath, importFilesToDir, getTargetDirFromSelection]
   )
 
   // Listen for paste events when the file tree is focused or hovered
@@ -654,43 +698,8 @@ export function FileTreeSidebar({
 
       e.preventDefault()
 
-      // Helper to compute target dir
-      const computeTargetDir = (nodePath: string, nodeType: "file" | "folder"): string => {
-        if (nodeType === "folder") {
-          return `${projectPath}/${nodePath}`
-        }
-        const parentPath = nodePath.includes("/")
-          ? nodePath.substring(0, nodePath.lastIndexOf("/"))
-          : ""
-        return parentPath ? `${projectPath}/${parentPath}` : projectPath
-      }
-
-      // Determine target directory based on selection
-      let targetDir = projectPath
-
-      if (selectedPath) {
-        // Find the selected node to check if it's a folder
-        const selectedNode = flattenedNodes.find(n => n.node.path === selectedPath)
-        if (selectedNode) {
-          targetDir = computeTargetDir(selectedPath, selectedNode.node.type)
-        } else {
-          // Node not found in visible tree - check the full tree
-          const checkNodeType = (nodes: typeof filteredTree): "file" | "folder" | null => {
-            for (const n of nodes) {
-              if (n.path === selectedPath) return n.type
-              if (n.type === "folder" && n.children) {
-                const found = checkNodeType(n.children)
-                if (found) return found
-              }
-            }
-            return null
-          }
-          const nodeType = checkNodeType(filteredTree)
-          if (nodeType) {
-            targetDir = computeTargetDir(selectedPath, nodeType)
-          }
-        }
-      }
+      // Use the shared helper to get target directory based on selection
+      const targetDir = getTargetDirFromSelection()
 
       // Execute paste operation
       if (fileClipboard.operation === "cut") {
@@ -708,7 +717,7 @@ export function FileTreeSidebar({
 
     document.addEventListener("keydown", handleDocumentKeyDown)
     return () => document.removeEventListener("keydown", handleDocumentKeyDown)
-  }, [projectPath, selectedPath, flattenedNodes, filteredTree, fileClipboard, setFileClipboard, moveFileMutation, copyFilesMutation])
+  }, [projectPath, fileClipboard, setFileClipboard, moveFileMutation, copyFilesMutation, getTargetDirFromSelection])
 
   // Keyboard handler for file operations
   const handleKeyDown = useCallback(

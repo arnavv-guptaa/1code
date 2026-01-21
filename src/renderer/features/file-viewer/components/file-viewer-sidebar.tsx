@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Editor from "@monaco-editor/react"
 import { useAtom } from "jotai"
 import { useTheme } from "next-themes"
@@ -7,6 +7,8 @@ import {
   WrapText,
   AlertCircle,
   FileWarning,
+  Copy,
+  Check,
 } from "lucide-react"
 import { getFileIconByExtension } from "../../agents/mentions/agents-file-mention"
 import { IconCloseSidebarRight } from "@/components/ui/icons"
@@ -137,6 +139,7 @@ function Header({
   wordWrap,
   onToggleWordWrap,
   onClose,
+  content,
 }: {
   fileName: string
   filePath: string
@@ -144,7 +147,21 @@ function Header({
   wordWrap: boolean
   onToggleWordWrap: () => void
   onClose: () => void
+  content?: string | null
 }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }, [content])
+
   return (
     <div className="flex items-center justify-between px-3 h-10 border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -159,6 +176,28 @@ function Header({
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Copy file content */}
+        {content && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleCopy}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {copied ? "Copied!" : "Copy file content"}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {/* Word wrap toggle */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -335,6 +374,7 @@ function CodeViewer({
         wordWrap={wordWrap}
         onToggleWordWrap={handleToggleWordWrap}
         onClose={onClose}
+        content={content}
       />
       <div className="flex-1 min-h-0">
         <Editor
