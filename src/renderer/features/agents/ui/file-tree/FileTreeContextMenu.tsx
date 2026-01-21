@@ -186,14 +186,12 @@ export function FileTreeContextMenu({
               <ContextMenuItem onClick={onNewFile}>
                 <FilePlus className="mr-2 h-4 w-4" />
                 New File
-                <ContextMenuShortcut>⌘N</ContextMenuShortcut>
               </ContextMenuItem>
             )}
             {onNewFolder && (
               <ContextMenuItem onClick={onNewFolder}>
                 <FolderPlus className="mr-2 h-4 w-4" />
                 New Folder
-                <ContextMenuShortcut>⇧⌘N</ContextMenuShortcut>
               </ContextMenuItem>
             )}
             <ContextMenuSeparator />
