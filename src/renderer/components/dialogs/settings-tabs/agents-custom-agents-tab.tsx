@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react"
 import { ChevronRight, Trash2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
-import { useAtomValue } from "jotai"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
 import { AgentIcon } from "../../ui/icons"
-import { selectedProjectAtom } from "../../../features/agents/atoms"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -39,19 +37,17 @@ export function AgentsCustomAgentsTab() {
   const isNarrowScreen = useIsNarrowScreen()
   const [expandedAgentName, setExpandedAgentName] = useState<string | null>(null)
 
-  // Get the currently selected project for project-specific agents
-  const selectedProject = useAtomValue(selectedProjectAtom)
-
   const utils = trpc.useUtils()
-  const { data: agents = [], isLoading } = trpc.agents.list.useQuery(
-    selectedProject?.path ? { cwd: selectedProject.path } : undefined
+  const { data: agents = [], isLoading } = trpc.agents.listEnabled.useQuery(
+    undefined,
+    { staleTime: 0 } // Always refetch when settings opens
   )
 
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
 
   const deleteAgentMutation = trpc.agents.delete.useMutation({
     onSuccess: () => {
-      utils.agents.list.invalidate()
+      utils.agents.listEnabled.invalidate()
     },
     onError: (error) => {
       console.error("Failed to delete agent:", error.message)
@@ -59,7 +55,6 @@ export function AgentsCustomAgentsTab() {
   })
 
   const userAgents = agents.filter((a) => a.source === "user")
-  const projectAgents = agents.filter((a) => a.source === "project")
 
   const handleExpandAgent = (agentName: string) => {
     setExpandedAgentName(expandedAgentName === agentName ? null : agentName)
@@ -73,7 +68,6 @@ export function AgentsCustomAgentsTab() {
     deleteAgentMutation.mutate({
       name: agent.name,
       source: agent.source,
-      cwd: agent.source === "project" ? selectedProject?.path : undefined,
     })
   }
 
@@ -118,53 +112,25 @@ export function AgentsCustomAgentsTab() {
             </p>
           </div>
         ) : (
-          <>
-            {/* User Agents */}
-            {userAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  ~/.claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {userAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                        onDelete={() => handleDeleteAgent(agent)}
-                      />
-                    ))}
-                  </div>
-                </div>
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">
+              ~/.claude/agents/
+            </div>
+            <div className="bg-background rounded-lg border border-border overflow-hidden">
+              <div className="divide-y divide-border">
+                {userAgents.map((agent) => (
+                  <AgentRow
+                    key={agent.name}
+                    agent={agent}
+                    isExpanded={expandedAgentName === agent.name}
+                    onToggle={() => handleExpandAgent(agent.name)}
+                    onOpenInFinder={() => handleOpenInFinder(agent.path)}
+                    onDelete={() => handleDeleteAgent(agent)}
+                  />
+                ))}
               </div>
-            )}
-
-            {/* Project Agents */}
-            {projectAgents.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  .claude/agents/
-                </div>
-                <div className="bg-background rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border">
-                    {projectAgents.map((agent) => (
-                      <AgentRow
-                        key={agent.name}
-                        agent={agent}
-                        isExpanded={expandedAgentName === agent.name}
-                        onToggle={() => handleExpandAgent(agent.name)}
-                        onOpenInFinder={() => handleOpenInFinder(agent.path)}
-                        onDelete={() => handleDeleteAgent(agent)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
       </div>
 

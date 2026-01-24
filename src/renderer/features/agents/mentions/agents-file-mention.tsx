@@ -618,9 +618,9 @@ function renderTooltipContent(option: FileMentionOption) {
 
   if (option.type === "skill" || option.type === "agent") {
     return (
-      <div className="flex flex-col gap-1.5 w-full overflow-hidden">
+      <div className="flex flex-col gap-1.5 w-full overflow-hidden max-w-[280px]">
         {option.description && (
-          <p className="text-xs text-muted-foreground break-words">
+          <p className="text-xs text-muted-foreground break-words line-clamp-3">
             {option.description}
           </p>
         )}

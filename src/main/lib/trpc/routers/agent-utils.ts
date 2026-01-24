@@ -41,7 +41,19 @@ export function parseAgentMd(
 ): Partial<ParsedAgent> {
   try {
     const { data, content: body } = matter(content)
-    return extractAgentFields(data, body, filename)
+    const result = extractAgentFields(data, body, filename)
+
+    // gray-matter can inconsistently parse complex YAML: sometimes it throws,
+    // sometimes it "succeeds" but silently drops fields (e.g. description becomes empty).
+    // If the file has a description field but gray-matter returned empty, use fallback.
+    if (!result.description && content.includes("description:")) {
+      const fallback = parseFrontmatterFallback(content, filename)
+      if (fallback && fallback.description) {
+        return fallback
+      }
+    }
+
+    return result
   } catch (err) {
     // gray-matter fails on complex YAML (e.g. unquoted colons in descriptions)
     // Fall back to regex-based frontmatter parsing
