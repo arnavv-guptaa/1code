@@ -3,10 +3,9 @@
 import { memo, useCallback, useRef, useState, useEffect } from "react"
 import { createPortal } from "react-dom"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { ChevronDown, WifiOff } from "lucide-react"
+import { ChevronDown, WifiOff, Zap } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
-import { Switch } from "../../../components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +19,7 @@ import {
   CheckIcon,
   ClaudeCodeIcon,
   PlanIcon,
+  ThinkingIcon,
 } from "../../../components/ui/icons"
 import { Kbd } from "../../../components/ui/kbd"
 import {
@@ -27,65 +27,64 @@ import {
   PromptInputActions,
   PromptInputContextItems,
 } from "../../../components/ui/prompt-input"
+import { Switch } from "../../../components/ui/switch"
+import {
+  autoOfflineModeAtom,
+  customClaudeConfigAtom,
+  extendedThinkingEnabledAtom,
+  normalizeCustomClaudeConfig,
+  selectedOllamaModelAtom,
+  showOfflineModeFeaturesAtom
+} from "../../../lib/atoms"
+import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom, showCreateAgentFormAtom } from "../atoms"
+import { isPlanModeAtom, lastSelectedModelIdAtom, showCreateAgentFormAtom, type SubChatFileChange } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
+import type { UploadedFile, UploadedImage } from "../hooks/use-agents-file-upload"
 import {
+  clearSubChatDraft,
+  saveSubChatDraftWithAttachments,
+} from "../lib/drafts"
+import { CLAUDE_MODELS } from "../lib/models"
+import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
+import {
+  AgentsFileMention,
   AgentsMentionsEditor,
   type AgentsMentionsEditorHandle,
   type FileMentionOption,
 } from "../mentions"
-import { AgentsFileMention } from "../mentions"
 import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-context-indicator"
+import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
 import { AgentTextContextItem } from "../ui/agent-text-context-item"
-import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
-import type { SelectedTextContext, DiffTextContext } from "../lib/queue-utils"
-import type { UploadedImage, UploadedFile } from "../hooks/use-agents-file-upload"
 import { handlePasteEvent } from "../utils/paste-text"
-import {
-  saveSubChatDraftWithAttachments,
-  clearSubChatDraft,
-} from "../lib/drafts"
-import { CLAUDE_MODELS } from "../lib/models"
-import { type SubChatFileChange } from "../atoms"
-import {
-  customClaudeConfigAtom,
-  normalizeCustomClaudeConfig,
-  activeConfigAtom,
-  autoOfflineModeAtom,
-  showOfflineModeFeaturesAtom,
-  extendedThinkingEnabledAtom,
-} from "../../../lib/atoms"
-import { trpc } from "../../../lib/trpc"
 
-// Hook to get available models (including offline model if Ollama is available and debug enabled)
+// Hook to get available models (including offline models if Ollama is available and debug enabled)
 function useAvailableModels() {
-  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
-    refetchInterval: 30000,
-  })
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
+    refetchInterval: showOfflineFeatures ? 30000 : false,
+    enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
+  })
 
   const baseModels = CLAUDE_MODELS
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
-  const hasOllama = ollamaStatus?.ollama.available && !!ollamaStatus.ollama.recommendedModel
+  const hasOllama = ollamaStatus?.ollama.available && (ollamaStatus.ollama.models?.length ?? 0) > 0
+  const ollamaModels = ollamaStatus?.ollama.models || []
+  const recommendedModel = ollamaStatus?.ollama.recommendedModel
 
-  // Only show offline model if:
+  // Only show offline models if:
   // 1. Debug flag is enabled (showOfflineFeatures)
-  // 2. Ollama is available
+  // 2. Ollama is available with models
   // 3. User is actually offline
   if (showOfflineFeatures && hasOllama && isOffline) {
     return {
-      models: [
-        ...baseModels,
-        {
-          id: "offline",
-          name: ollamaStatus.ollama.recommendedModel,
-        },
-      ],
+      models: baseModels,
+      ollamaModels,
+      recommendedModel,
       isOffline,
       hasOllama: true,
     }
@@ -93,6 +92,8 @@ function useAvailableModels() {
 
   return {
     models: baseModels,
+    ollamaModels: [] as string[],
+    recommendedModel: undefined as string | undefined,
     isOffline,
     hasOllama: false,
   }
@@ -107,12 +108,10 @@ export interface ChatInputAreaProps {
   onSend: () => void
   onForceSend: () => void // Opt+Enter: stop stream and send immediately, bypassing queue
   onStop: () => Promise<void>
-  onApprovePlan: () => void
   onCompact: () => void
   onCreateNewSubChat?: () => void
   // State from parent
   isStreaming: boolean
-  hasUnapprovedPlan: boolean
   isCompacting: boolean
   // File uploads
   images: UploadedImage[]
@@ -157,7 +156,6 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
   // Compare primitives and stable references first (fast path)
   if (
     prevProps.isStreaming !== nextProps.isStreaming ||
-    prevProps.hasUnapprovedPlan !== nextProps.hasUnapprovedPlan ||
     prevProps.isCompacting !== nextProps.isCompacting ||
     prevProps.isUploading !== nextProps.isUploading ||
     prevProps.subChatId !== nextProps.subChatId ||
@@ -184,7 +182,6 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.onSend !== nextProps.onSend ||
     prevProps.onForceSend !== nextProps.onForceSend ||
     prevProps.onStop !== nextProps.onStop ||
-    prevProps.onApprovePlan !== nextProps.onApprovePlan ||
     prevProps.onCompact !== nextProps.onCompact ||
     prevProps.onCreateNewSubChat !== nextProps.onCreateNewSubChat ||
     prevProps.onAddAttachments !== nextProps.onAddAttachments ||
@@ -294,11 +291,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   onSend,
   onForceSend,
   onStop,
-  onApprovePlan,
   onCompact,
   onCreateNewSubChat,
   isStreaming,
-  hasUnapprovedPlan,
   isCompacting,
   images,
   files,
@@ -367,6 +362,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   // Model dropdown state
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
+  const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
   const availableModels = useAvailableModels()
   const autoOfflineMode = useAtomValue(autoOfflineModeAtom)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
@@ -378,32 +374,22 @@ export const ChatInputArea = memo(function ChatInputArea({
     normalizeCustomClaudeConfig(customClaudeConfig)
   const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
 
+  // Determine current Ollama model (selected or recommended)
+  const currentOllamaModel = selectedOllamaModel || availableModels.recommendedModel || availableModels.ollamaModels[0]
+
+  // Debug: log selected Ollama model
+  useEffect(() => {
+    if (availableModels.isOffline) {
+      console.log(`[Ollama UI] selectedOllamaModel atom value: ${selectedOllamaModel || "(null)"}, currentOllamaModel: ${currentOllamaModel}`)
+    }
+  }, [selectedOllamaModel, currentOllamaModel, availableModels.isOffline])
+
   // Extended thinking (reasoning) toggle
   const [thinkingEnabled, setThinkingEnabled] = useAtom(extendedThinkingEnabledAtom)
 
   // Auto-switch model based on network status (only if offline features enabled)
-  useEffect(() => {
-    if (hasCustomClaudeConfig || !autoOfflineMode || !showOfflineFeatures) return
-
-    // Offline + Ollama available → switch to offline model
-    if (availableModels.isOffline && availableModels.hasOllama) {
-      const offlineModel = availableModels.models.find(m => m.id === "offline")
-      if (offlineModel && selectedModel?.id !== "offline") {
-        console.log('[UI] Auto-switching to offline model')
-        setSelectedModel(offlineModel)
-        setLastSelectedModelId("offline")
-      }
-    }
-    // Online + currently on offline model → switch back to last Claude model
-    else if (!availableModels.isOffline && selectedModel?.id === "offline") {
-      const claudeModel = availableModels.models.find(m => m.id === "sonnet") || availableModels.models[0]
-      if (claudeModel) {
-        console.log('[UI] Auto-switching back to Claude model')
-        setSelectedModel(claudeModel)
-        setLastSelectedModelId(claudeModel.id)
-      }
-    }
-  }, [availableModels.isOffline, availableModels.hasOllama, autoOfflineMode, hasCustomClaudeConfig, showOfflineFeatures, availableModels.models, selectedModel?.id, setLastSelectedModelId])
+  // Note: When offline, we show Ollama models selector instead of Claude models
+  // The selectedOllamaModel atom is used to track which Ollama model is selected
 
   // Plan mode - global atom
   const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
@@ -591,8 +577,12 @@ export const ChatInputArea = memo(function ChatInputArea({
         return
       }
 
-      // Handle repository commands - auto-send to agent
-      if (command.prompt) {
+      // Handle custom commands
+      if (command.argumentHint) {
+        // Command expects arguments - insert command and let user add args
+        editorRef.current?.setValue(`/${command.name} `)
+      } else if (command.prompt) {
+        // Command without arguments - send immediately
         editorRef.current?.setValue(command.prompt)
         setTimeout(() => onSend(), 0)
       }
@@ -928,96 +918,129 @@ export const ChatInputArea = memo(function ChatInputArea({
                       )}
                   </DropdownMenu>
 
-                  {/* Model selector */}
-                  <DropdownMenu
-                    open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
-                    onOpenChange={(open) => {
-                      if (!hasCustomClaudeConfig) {
-                        setIsModelDropdownOpen(open)
-                      }
-                    }}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        disabled={hasCustomClaudeConfig}
-                        className={cn(
-                          "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-colors rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
-                          hasCustomClaudeConfig
-                            ? "opacity-70 cursor-not-allowed"
-                            : "hover:text-foreground hover:bg-muted/50",
-                        )}
-                      >
-                        <ClaudeCodeIcon className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">
-                          {hasCustomClaudeConfig ? (
-                            "Custom Model"
-                          ) : (
-                            <>
-                              {selectedModel?.name}{" "}
-                              <span className="text-muted-foreground">4.5</span>
-                            </>
+                  {/* Model selector - shows Ollama models when offline, Claude models when online */}
+                  {availableModels.isOffline && availableModels.hasOllama ? (
+                    // Offline mode: show Ollama model selector
+                    <DropdownMenu
+                      open={isModelDropdownOpen}
+                      onOpenChange={setIsModelDropdownOpen}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 border border-border"
+                        >
+                          <Zap className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{currentOllamaModel || "Select model"}</span>
+                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[240px]">
+                        {availableModels.ollamaModels.map((model) => {
+                          const isSelected = model === currentOllamaModel
+                          const isRecommended = model === availableModels.recommendedModel
+                          return (
+                            <DropdownMenuItem
+                              key={model}
+                              onClick={() => {
+                                console.log(`[Ollama UI] Setting selected model: ${model}`)
+                                setSelectedOllamaModel(model)
+                              }}
+                              className="gap-2 justify-between"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <span>
+                                  {model}
+                                  {isRecommended && (
+                                    <span className="text-muted-foreground ml-1">(recommended)</span>
+                                  )}
+                                </span>
+                              </div>
+                              {isSelected && (
+                                <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                          )
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    // Online mode: show Claude model selector
+                    <DropdownMenu
+                      open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
+                      onOpenChange={(open) => {
+                        if (!hasCustomClaudeConfig) {
+                          setIsModelDropdownOpen(open)
+                        }
+                      }}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          disabled={hasCustomClaudeConfig}
+                          className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-colors rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                            hasCustomClaudeConfig
+                              ? "opacity-70 cursor-not-allowed"
+                              : "hover:text-foreground hover:bg-muted/50",
                           )}
-                        </span>
-                        <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[200px]">
-                      {availableModels.models.map((model) => {
-                        const isSelected = selectedModel?.id === model.id
-                        const isOfflineModel = model.id === "offline"
-                        // Disable non-offline models when offline
-                        const isDisabled = availableModels.isOffline && !isOfflineModel
-                        return (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() => {
-                              if (!isDisabled) {
+                        >
+                          <ClaudeCodeIcon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">
+                            {hasCustomClaudeConfig ? (
+                              "Custom Model"
+                            ) : (
+                              <>
+                                {selectedModel?.name}{" "}
+                                <span className="text-muted-foreground">4.5</span>
+                              </>
+                            )}
+                          </span>
+                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[200px]">
+                        {availableModels.models.map((model) => {
+                          const isSelected = selectedModel?.id === model.id
+                          return (
+                            <DropdownMenuItem
+                              key={model.id}
+                              onClick={() => {
                                 setSelectedModel(model)
                                 setLastSelectedModelId(model.id)
-                              }
-                            }}
-                            className="gap-2 justify-between"
-                            disabled={isDisabled}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              {isOfflineModel ? (
-                                <WifiOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              ) : (
+                              }}
+                              className="gap-2 justify-between"
+                            >
+                              <div className="flex items-center gap-1.5">
                                 <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span>
+                                  {model.name}{" "}
+                                  <span className="text-muted-foreground">4.5</span>
+                                </span>
+                              </div>
+                              {isSelected && (
+                                <CheckIcon className="h-3.5 w-3.5 shrink-0" />
                               )}
-                              <span>
-                                {isOfflineModel ? (
-                                  model.name
-                                ) : (
-                                  <>
-                                    {model.name}{" "}
-                                    <span className="text-muted-foreground">
-                                      4.5
-                                    </span>
-                                  </>
-                                )}
-                              </span>
-                            </div>
-                            {isSelected && (
-                              <CheckIcon className="h-3.5 w-3.5 shrink-0" />
-                            )}
-                          </DropdownMenuItem>
-                        )
-                      })}
-                      <DropdownMenuSeparator />
-                      <div
-                        className="flex items-center justify-between px-2 py-1.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span className="text-sm">Thinking</span>
-                        <Switch
-                          checked={thinkingEnabled}
-                          onCheckedChange={setThinkingEnabled}
-                          className="scale-75"
-                        />
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                            </DropdownMenuItem>
+                          )
+                        })}
+                        <DropdownMenuSeparator />
+                        <div
+                          className="flex items-center justify-between px-1.5 py-1.5 mx-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <ThinkingIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-sm">Thinking</span>
+                          </div>
+                          <Switch
+                            checked={thinkingEnabled}
+                            onCheckedChange={setThinkingEnabled}
+                            className="scale-75"
+                          />
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
@@ -1054,53 +1077,32 @@ export const ChatInputArea = memo(function ChatInputArea({
                     <AttachIcon className="h-4 w-4" />
                   </Button>
 
-                  {/* Send/Stop button or Build Plan button */}
+                  {/* Send/Stop button */}
                   <div className="ml-1">
-                    {/* Show "Build plan" button when plan is ready, input is empty, and in plan mode */}
-                    {isPlanMode &&
-                    hasUnapprovedPlan &&
-                    !hasContent &&
-                    images.length === 0 &&
-                    files.length === 0 &&
-                    textContexts.length === 0 &&
-                    (diffTextContexts?.length ?? 0) === 0 &&
-                    !isStreaming ? (
-                      <Button
-                        onClick={onApprovePlan}
-                        size="sm"
-                        className="h-7 gap-1.5 rounded-lg"
-                      >
-                        Build plan
-                        <Kbd className="text-primary-foreground/70">
-                          ⌘↵
-                        </Kbd>
-                      </Button>
-                    ) : (
-                      <AgentSendButton
-                        isStreaming={isStreaming}
-                        isSubmitting={false}
-                        disabled={
-                          (!hasContent &&
-                            images.length === 0 &&
-                            files.length === 0 &&
-                            textContexts.length === 0 &&
-                            (diffTextContexts?.length ?? 0) === 0 &&
-                            queueLength === 0) ||
-                          isUploading
+                    <AgentSendButton
+                      isStreaming={isStreaming}
+                      isSubmitting={false}
+                      disabled={
+                        (!hasContent &&
+                          images.length === 0 &&
+                          files.length === 0 &&
+                          textContexts.length === 0 &&
+                          (diffTextContexts?.length ?? 0) === 0 &&
+                          queueLength === 0) ||
+                        isUploading
+                      }
+                      hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0}
+                      onClick={() => {
+                        // If input is empty and queue has items, send first queue item
+                        if (!hasContent && images.length === 0 && files.length === 0 && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
+                          onSendFromQueue(firstQueueItemId)
+                        } else {
+                          onSend()
                         }
-                        hasContent={hasContent || images.length > 0 || files.length > 0 || textContexts.length > 0 || (diffTextContexts?.length ?? 0) > 0}
-                        onClick={() => {
-                          // If input is empty and queue has items, send first queue item
-                          if (!hasContent && images.length === 0 && files.length === 0 && queueLength > 0 && onSendFromQueue && firstQueueItemId) {
-                            onSendFromQueue(firstQueueItemId)
-                          } else {
-                            onSend()
-                          }
-                        }}
-                        onStop={onStop}
-                        isPlanMode={isPlanMode}
-                      />
-                    )}
+                      }}
+                      onStop={onStop}
+                      isPlanMode={isPlanMode}
+                    />
                   </div>
                 </div>
               </PromptInputActions>
@@ -1164,8 +1166,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         onSelect={handleSlashSelect}
         searchText={slashSearchText}
         position={slashPosition}
-        teamId={teamId}
-        repository={repository}
+        projectPath={projectPath}
         isPlanMode={isPlanMode}
       />
     </div>

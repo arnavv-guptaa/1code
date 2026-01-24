@@ -13,7 +13,8 @@ import {
 import { createFileIconElement } from "./agents-file-mention"
 
 // Threshold for skipping expensive trigger detection (characters)
-const LARGE_TEXT_THRESHOLD = 50000
+// Should be >= MAX_PASTE_LENGTH from paste-text.ts to avoid processing large pasted content
+const LARGE_TEXT_THRESHOLD = 10000
 
 export interface FileMentionOption {
   id: string // file:owner/repo:path/to/file.tsx or folder:owner/repo:path/to/folder or skill:skill-name or tool:mcp-tool-name
@@ -802,17 +803,6 @@ export const AgentsMentionsEditor = memo(
                 cursorRect.height
               )
 
-              console.log('[MentionEditor] USING CURSOR POSITION:', {
-                cursor: {
-                  top: cursorRect.top,
-                  left: cursorRect.left,
-                },
-                final: {
-                  top: rect.top,
-                  left: rect.left
-                },
-                searchText: afterAt
-              })
               onTrigger({ searchText: afterAt, rect })
               return
             }

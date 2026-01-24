@@ -92,7 +92,7 @@ interface SidebarSearchHistoryPopoverProps {
   sortedSubChats: SubChatMeta[]
   loadingSubChats: Map<string, string>
   subChatUnseenChanges: Set<string>
-  pendingQuestions: { subChatId: string } | null
+  pendingQuestionsMap: Map<string, { subChatId: string }>
   allSubChatsLength: number
   onSelect: (subChat: SubChatMeta) => void
 }
@@ -101,7 +101,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
   sortedSubChats,
   loadingSubChats,
   subChatUnseenChanges,
-  pendingQuestions,
+  pendingQuestionsMap,
   allSubChatsLength,
   onSelect,
 }: SidebarSearchHistoryPopoverProps) {
@@ -112,7 +112,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
     const isLoading = loadingSubChats.has(subChat.id)
     const hasUnseen = subChatUnseenChanges.has(subChat.id)
     const mode = subChat.mode || "agent"
-    const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+    const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
 
     return (
       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -140,7 +140,7 @@ const SidebarSearchHistoryPopover = memo(function SidebarSearchHistoryPopover({
         </span>
       </div>
     )
-  }, [loadingSubChats, subChatUnseenChanges, pendingQuestions])
+  }, [loadingSubChats, subChatUnseenChanges, pendingQuestionsMap])
 
   return (
     <SearchCombobox
@@ -241,7 +241,7 @@ export function AgentsSubChatsSidebar({
   const subChatUnseenChanges = useAtomValue(agentsSubChatUnseenChangesAtom)
   const setSubChatUnseenChanges = useSetAtom(agentsSubChatUnseenChangesAtom)
   const [justCreatedIds, setJustCreatedIds] = useAtom(justCreatedIdsAtom)
-  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
   // Pending plan approvals from DB - only for open sub-chats
   const { data: pendingPlanApprovalsData } = trpc.chats.getPendingPlanApprovals.useQuery(
@@ -947,7 +947,7 @@ export function AgentsSubChatsSidebar({
         sortedSubChats={sortedSubChats}
         loadingSubChats={loadingSubChats}
         subChatUnseenChanges={subChatUnseenChanges}
-        pendingQuestions={pendingQuestions}
+        pendingQuestionsMap={pendingQuestionsMap}
         allSubChatsLength={allSubChats.length}
         onSelect={handleSelectFromHistory}
       />
@@ -1195,7 +1195,7 @@ export function AgentsSubChatsSidebar({
                           const mode = subChat.mode || "agent"
                           const isChecked = selectedSubChatIds.has(subChat.id)
                           const draftText = getDraftText(subChat.id)
-                          const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                          const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
                           const fileChanges = subChatFiles.get(subChat.id) || []
                           const stats =
@@ -1426,6 +1426,7 @@ export function AgentsSubChatsSidebar({
                                   isOnlyChat={openSubChats.length === 1}
                                   currentIndex={globalIndex}
                                   totalCount={filteredSubChats.length}
+                                  chatId={parentChatId}
                                 />
                               )}
                             </ContextMenu>
@@ -1468,7 +1469,7 @@ export function AgentsSubChatsSidebar({
                           const mode = subChat.mode || "agent"
                           const isChecked = selectedSubChatIds.has(subChat.id)
                           const draftText = getDraftText(subChat.id)
-                          const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                          const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                           const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
                           const fileChanges = subChatFiles.get(subChat.id) || []
                           const stats =
@@ -1699,6 +1700,7 @@ export function AgentsSubChatsSidebar({
                                   isOnlyChat={openSubChats.length === 1}
                                   currentIndex={globalIndex}
                                   totalCount={filteredSubChats.length}
+                                  chatId={parentChatId}
                                 />
                               )}
                             </ContextMenu>

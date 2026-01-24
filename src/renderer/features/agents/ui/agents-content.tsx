@@ -35,7 +35,7 @@ import { AgentsSidebar } from "../../sidebar/agents-sidebar"
 import { AgentsSubChatsSidebar } from "../../sidebar/agents-subchats-sidebar"
 import { AgentPreview } from "./agent-preview"
 import { AgentDiffView } from "./agent-diff-view"
-import { TerminalSidebar, terminalSidebarOpenAtom } from "../../terminal"
+import { TerminalSidebar, terminalSidebarOpenAtomFamily } from "../../terminal"
 import {
   useAgentSubChatStore,
   type SubChatMeta,
@@ -67,7 +67,12 @@ export function AgentsContent() {
   const [subChatsSidebarMode, setSubChatsSidebarMode] = useAtom(
     agentsSubChatsSidebarModeAtom,
   )
-  const setTerminalSidebarOpen = useSetAtom(terminalSidebarOpenAtom)
+  // Per-chat terminal sidebar state
+  const terminalSidebarAtom = useMemo(
+    () => terminalSidebarOpenAtomFamily(selectedChatId || ""),
+    [selectedChatId],
+  )
+  const setTerminalSidebarOpen = useSetAtom(terminalSidebarAtom)
 
   const hasOpenedSubChatsSidebar = useRef(false)
   const wasSubChatsSidebarOpen = useRef(false)
@@ -228,7 +233,7 @@ export function AgentsContent() {
   }, [isMobile, selectedChatId, mobileViewMode, setMobileViewMode])
 
   // On mobile: when in terminal mode, sync with terminal sidebar close
-  const terminalSidebarOpen = useAtomValue(terminalSidebarOpenAtom)
+  const terminalSidebarOpen = useAtomValue(terminalSidebarAtom)
   useEffect(() => {
     // If terminal sidebar closed while in terminal mode, go back to chat
     if (isMobile && mobileViewMode === "terminal" && !terminalSidebarOpen) {

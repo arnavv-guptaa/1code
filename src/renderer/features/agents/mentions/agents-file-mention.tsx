@@ -1260,14 +1260,6 @@ export const AgentsFileMention = memo(function AgentsFileMention({
   // Position is already aligned to editor left edge, no offset needed
   let finalLeft = position.left
 
-  console.log('[FileMention] Position (aligned to editor left):', {
-    top: position.top,
-    left: position.left,
-    finalTop,
-    finalLeft,
-    placeAbove,
-    dropdownWidth
-  })
 
   // Adjust horizontal overflow
   if (finalLeft + dropdownWidth > window.innerWidth - safeMargin) {

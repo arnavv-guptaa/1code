@@ -8,11 +8,11 @@ import { Button as ButtonCustom } from "../../components/ui/button"
 import { cn } from "../../lib/utils"
 import { useSetAtom, useAtom, useAtomValue } from "jotai"
 import {
+  autoAdvanceTargetAtom,
   createTeamDialogOpenAtom,
   agentsSettingsDialogActiveTabAtom,
   agentsSettingsDialogOpenAtom,
   agentsHelpPopoverOpenAtom,
-  agentsShortcutsDialogOpenAtom,
   selectedAgentChatIdsAtom,
   isAgentMultiSelectModeAtom,
   toggleAgentChatSelectionAtom,
@@ -60,6 +60,9 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
 } from "../../components/ui/context-menu"
 import {
   IconDoubleChevronLeft,
@@ -73,6 +76,7 @@ import {
   ArchiveIcon,
   TrashIcon,
   QuestionCircleIcon,
+  QuestionIcon,
   KeyboardIcon,
   TicketIcon,
 } from "../../components/ui/icons"
@@ -90,6 +94,7 @@ import {
   selectedProjectAtom,
   justCreatedIdsAtom,
   undoStackAtom,
+  pendingUserQuestionsAtom,
   type UndoItem,
 } from "../agents/atoms"
 import { NetworkStatus } from "../../components/ui/network-status"
@@ -106,10 +111,46 @@ import { useHotkeys } from "react-hotkeys-hook"
 import { Checkbox } from "../../components/ui/checkbox"
 import { useHaptic } from "./hooks/use-haptic"
 import { TypewriterText } from "../../components/ui/typewriter-text"
+import { exportChat, copyChat, type ExportFormat } from "../agents/lib/export-chat"
 
 // Feedback URL: uses env variable for hosted version, falls back to public Discord for open source
 const FEEDBACK_URL =
   import.meta.env.VITE_FEEDBACK_URL || "https://discord.gg/8ektTZGnj4"
+
+// GitHub avatar with loading placeholder
+const GitHubAvatar = React.memo(function GitHubAvatar({
+  gitOwner,
+  className = "h-4 w-4",
+}: {
+  gitOwner: string
+  className?: string
+}) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = useCallback(() => setIsLoaded(true), [])
+  const handleError = useCallback(() => setHasError(true), [])
+
+  if (hasError) {
+    return <GitHubLogo className={cn(className, "text-muted-foreground flex-shrink-0")} />
+  }
+
+  return (
+    <div className={cn(className, "relative flex-shrink-0")}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={cn(className, "rounded-sm flex-shrink-0", isLoaded ? 'opacity-100' : 'opacity-0')}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
+  )
+})
 
 // Component to render chat icon with loading status
 const ChatIcon = React.memo(function ChatIcon({
@@ -117,6 +158,7 @@ const ChatIcon = React.memo(function ChatIcon({
   isLoading,
   hasUnseenChanges = false,
   hasPendingPlan = false,
+  hasPendingQuestion = false,
   isMultiSelectMode = false,
   isChecked = false,
   onCheckboxClick,
@@ -128,6 +170,7 @@ const ChatIcon = React.memo(function ChatIcon({
   isLoading: boolean
   hasUnseenChanges?: boolean
   hasPendingPlan?: boolean
+  hasPendingQuestion?: boolean
   isMultiSelectMode?: boolean
   isChecked?: boolean
   onCheckboxClick?: (e: React.MouseEvent) => void
@@ -138,13 +181,7 @@ const ChatIcon = React.memo(function ChatIcon({
   // Show GitHub avatar if available, otherwise blank project icon
   const renderMainIcon = () => {
     if (gitOwner && gitProvider === "github") {
-      return (
-        <img
-          src={`https://github.com/${gitOwner}.png?size=64`}
-          alt={gitOwner}
-          className="h-4 w-4 rounded-sm flex-shrink-0"
-        />
-      )
+      return <GitHubAvatar gitOwner={gitOwner} />
     }
     return (
       <GitHubLogo
@@ -191,26 +228,67 @@ const ChatIcon = React.memo(function ChatIcon({
       >
         {renderMainIcon()}
       </div>
-      {/* Badge in bottom-right corner: loader → amber dot → blue dot - hidden during multi-select or when icon is hidden */}
-      {(isLoading || hasUnseenChanges || hasPendingPlan) && !isMultiSelectMode && showIcon && (
-        <div
-          className={cn(
-            "absolute -bottom-1 -right-1 w-3 h-3 rounded-full flex items-center justify-center",
-            isSelected
-              ? "bg-[#E8E8E8] dark:bg-[#1B1B1B]"
-              : "bg-[#F4F4F4] group-hover:bg-[#E8E8E8] dark:bg-[#101010] dark:group-hover:bg-[#1B1B1B]",
-          )}
-        >
-          {/* Priority: loader > amber dot (pending plan) > blue dot (unseen) */}
-          {isLoading ? (
-            <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
-          ) : hasPendingPlan ? (
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          ) : (
-            <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
-          )}
-        </div>
-      )}
+      {/* Badge in bottom-right corner: question > loader > amber dot > blue dot - hidden during multi-select or when icon is hidden */}
+      <AnimatePresence mode="wait">
+        {(hasPendingQuestion || isLoading || hasUnseenChanges || hasPendingPlan) && !isMultiSelectMode && showIcon && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.15 }}
+            className={cn(
+              "absolute -bottom-1 -right-1 w-3 h-3 rounded-full flex items-center justify-center",
+              isSelected
+                ? "bg-[#E8E8E8] dark:bg-[#1B1B1B]"
+                : "bg-[#F4F4F4] group-hover:bg-[#E8E8E8] dark:bg-[#101010] dark:group-hover:bg-[#1B1B1B]",
+            )}
+          >
+            {/* Priority: question > loader > amber dot (pending plan) > blue dot (unseen) */}
+            <AnimatePresence mode="wait">
+              {hasPendingQuestion ? (
+                <motion.div
+                  key="question"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <QuestionIcon className="w-2.5 h-2.5 text-blue-500" />
+                </motion.div>
+              ) : isLoading ? (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
+                </motion.div>
+              ) : hasPendingPlan ? (
+                <motion.div
+                  key="plan"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                  className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                />
+              ) : (
+                <motion.div
+                  key="unseen"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 })
@@ -266,11 +344,7 @@ const DraftItem = React.memo(function DraftItem({
           <div className="pt-0.5">
             <div className="relative flex-shrink-0 w-4 h-4">
               {projectGitOwner && projectGitProvider === "github" ? (
-                <img
-                  src={`https://github.com/${projectGitOwner}.png?size=64`}
-                  alt={projectGitOwner}
-                  className="h-4 w-4 rounded-sm flex-shrink-0"
-                />
+                <GitHubAvatar gitOwner={projectGitOwner} />
               ) : (
                 <GitHubLogo className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
               )}
@@ -329,6 +403,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isLoading,
   hasUnseenChanges,
   hasPendingPlan,
+  hasPendingQuestion,
   isMultiSelectMode,
   isChecked,
   isFocused,
@@ -374,6 +449,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
   isLoading: boolean
   hasUnseenChanges: boolean
   hasPendingPlan: boolean
+  hasPendingQuestion: boolean
   isMultiSelectMode: boolean
   isChecked: boolean
   isFocused: boolean
@@ -469,6 +545,7 @@ const AgentChatItem = React.memo(function AgentChatItem({
                   isLoading={isLoading}
                   hasUnseenChanges={hasUnseenChanges}
                   hasPendingPlan={hasPendingPlan}
+                  hasPendingQuestion={hasPendingQuestion}
                   isMultiSelectMode={isMultiSelectMode}
                   isChecked={isChecked}
                   onCheckboxClick={(e) => onCheckboxClick(e, chatId)}
@@ -496,15 +573,50 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 {!isMultiSelectMode && !isMobileFullscreen && (
                   <div className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center relative">
                     {/* Inline loader/status when icon is hidden - always visible, hides on hover */}
-                    {!showIcon && (isLoading || hasUnseenChanges || hasPendingPlan) && (
+                    {!showIcon && (hasPendingQuestion || isLoading || hasUnseenChanges || hasPendingPlan) && (
                       <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0">
-                        {isLoading ? (
-                          <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
-                        ) : hasPendingPlan ? (
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        ) : (
-                          <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
-                        )}
+                        <AnimatePresence mode="wait">
+                          {hasPendingQuestion ? (
+                            <motion.div
+                              key="question"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <QuestionIcon className="w-2.5 h-2.5 text-blue-500" />
+                            </motion.div>
+                          ) : isLoading ? (
+                            <motion.div
+                              key="loading"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <LoadingDot isLoading={true} className="w-2.5 h-2.5 text-muted-foreground" />
+                            </motion.div>
+                          ) : hasPendingPlan ? (
+                            <motion.div
+                              key="plan"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                              className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                            />
+                          ) : (
+                            <motion.div
+                              key="unseen"
+                              initial={{ opacity: 0, scale: 0.5 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.5 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <LoadingDot isLoading={false} className="w-2.5 h-2.5 text-muted-foreground" />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     )}
                     {/* Archive button - appears on hover */}
@@ -579,6 +691,30 @@ const AgentChatItem = React.memo(function AgentChatItem({
                 Copy branch name
               </ContextMenuItem>
             )}
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>Export workspace</ContextMenuSubTrigger>
+              <ContextMenuSubContent sideOffset={6} alignOffset={-4}>
+                <ContextMenuItem onClick={() => exportChat({ chatId, format: "markdown" })}>
+                  Download as Markdown
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => exportChat({ chatId, format: "json" })}>
+                  Download as JSON
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => exportChat({ chatId, format: "text" })}>
+                  Download as Text
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onClick={() => copyChat({ chatId, format: "markdown" })}>
+                  Copy as Markdown
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => copyChat({ chatId, format: "json" })}>
+                  Copy as JSON
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => copyChat({ chatId, format: "text" })}>
+                  Copy as Text
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => onArchive(chatId)} className="justify-between">
               Archive workspace
@@ -631,6 +767,7 @@ function chatListSectionPropsAreEqual(
   if (prevProps.loadingChatIds !== nextProps.loadingChatIds) return false
   if (prevProps.unseenChanges !== nextProps.unseenChanges) return false
   if (prevProps.workspacePendingPlans !== nextProps.workspacePendingPlans) return false
+  if (prevProps.workspacePendingQuestions !== nextProps.workspacePendingQuestions) return false
   if (prevProps.selectedChatIds !== nextProps.selectedChatIds) return false
   if (prevProps.pinnedChatIds !== nextProps.pinnedChatIds) return false
   if (prevProps.justCreatedIds !== nextProps.justCreatedIds) return false
@@ -659,6 +796,7 @@ interface ChatListSectionProps {
   loadingChatIds: Set<string>
   unseenChanges: Set<string>
   workspacePendingPlans: Set<string>
+  workspacePendingQuestions: Set<string>
   isMultiSelectMode: boolean
   selectedChatIds: Set<string>
   isMobileFullscreen: boolean
@@ -699,6 +837,7 @@ const ChatListSection = React.memo(function ChatListSection({
   loadingChatIds,
   unseenChanges,
   workspacePendingPlans,
+  workspacePendingQuestions,
   isMultiSelectMode,
   selectedChatIds,
   isMobileFullscreen,
@@ -767,6 +906,7 @@ const ChatListSection = React.memo(function ChatListSection({
           const isChecked = selectedChatIds.has(chat.id)
           const stats = workspaceFileStats.get(chat.id)
           const hasPendingPlan = workspacePendingPlans.has(chat.id)
+          const hasPendingQuestion = workspacePendingQuestions.has(chat.id)
           const isLastInFilteredChats = globalIndex === filteredChats.length - 1
           const isJustCreated = justCreatedIds.has(chat.id)
 
@@ -783,6 +923,7 @@ const ChatListSection = React.memo(function ChatListSection({
               isLoading={isLoading}
               hasUnseenChanges={unseenChanges.has(chat.id)}
               hasPendingPlan={hasPendingPlan}
+              hasPendingQuestion={hasPendingQuestion}
               isMultiSelectMode={isMultiSelectMode}
               isChecked={isChecked}
               isFocused={isFocused}
@@ -906,7 +1047,6 @@ interface SidebarHeaderProps {
   onToggleSidebar?: () => void
   setSettingsDialogOpen: (open: boolean) => void
   setSettingsActiveTab: (tab: string) => void
-  setShortcutsDialogOpen: (open: boolean) => void
   setShowAuthDialog: (open: boolean) => void
   handleSidebarMouseEnter: () => void
   handleSidebarMouseLeave: () => void
@@ -923,7 +1063,6 @@ const SidebarHeader = memo(function SidebarHeader({
   onToggleSidebar,
   setSettingsDialogOpen,
   setSettingsActiveTab,
-  setShortcutsDialogOpen,
   setShowAuthDialog,
   handleSidebarMouseEnter,
   handleSidebarMouseLeave,
@@ -1103,7 +1242,8 @@ const SidebarHeader = memo(function SidebarHeader({
                           <DropdownMenuItem
                             onSelect={() => {
                               setIsDropdownOpen(false)
-                              setShortcutsDialogOpen(true)
+                              setSettingsActiveTab("keyboard")
+                              setSettingsDialogOpen(true)
                             }}
                             className="gap-2"
                           >
@@ -1203,7 +1343,8 @@ const SidebarHeader = memo(function SidebarHeader({
                           <DropdownMenuItem
                             onSelect={() => {
                               setIsDropdownOpen(false)
-                              setShortcutsDialogOpen(true)
+                              setSettingsActiveTab("keyboard")
+                              setSettingsDialogOpen(true)
                             }}
                             className="gap-2"
                           >
@@ -1291,8 +1432,10 @@ export function AgentsSidebar({
 }: AgentsSidebarProps) {
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const previousChatId = useAtomValue(previousAgentChatIdAtom)
+  const autoAdvanceTarget = useAtomValue(autoAdvanceTargetAtom)
   const [selectedDraftId, setSelectedDraftId] = useAtom(selectedDraftIdAtom)
   const [loadingSubChats] = useAtom(loadingSubChatsAtom)
+  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
   // Use ref instead of state to avoid re-renders on hover
   const isSidebarHoveredRef = useRef(false)
   const closeButtonRef = useRef<HTMLDivElement>(null)
@@ -1325,8 +1468,6 @@ export function AgentsSidebar({
   // Read unseen changes from global atoms
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const justCreatedIds = useAtomValue(justCreatedIdsAtom)
-
-  const setShortcutsDialogOpen = useSetAtom(agentsShortcutsDialogOpenAtom)
 
   // Haptic feedback
   const { trigger: triggerHaptic } = useHaptic()
@@ -1480,16 +1621,30 @@ export function AgentsSidebar({
       utils.chats.list.invalidate()
       utils.chats.listArchived.invalidate()
 
-      // If archiving the currently selected chat, navigate to previous or new workspace
+      // If archiving the currently selected chat, navigate based on auto-advance setting
       if (selectedChatId === variables.id) {
-        // Check if previous chat is available (exists and not being archived)
-        const isPreviousAvailable = previousChatId &&
-          agentChats?.some((c) => c.id === previousChatId && c.id !== variables.id)
+        const currentIndex = agentChats?.findIndex((c) => c.id === variables.id) ?? -1
 
-        if (isPreviousAvailable) {
-          setSelectedChatId(previousChatId)
+        if (autoAdvanceTarget === "next") {
+          // Find next workspace in list (after current index)
+          const nextChat = agentChats?.find((c, i) => i > currentIndex && c.id !== variables.id)
+          if (nextChat) {
+            setSelectedChatId(nextChat.id)
+          } else {
+            // No next workspace, go to new workspace view
+            setSelectedChatId(null)
+          }
+        } else if (autoAdvanceTarget === "previous") {
+          // Go to previously selected workspace
+          const isPreviousAvailable = previousChatId &&
+            agentChats?.some((c) => c.id === previousChatId && c.id !== variables.id)
+          if (isPreviousAvailable) {
+            setSelectedChatId(previousChatId)
+          } else {
+            setSelectedChatId(null)
+          }
         } else {
-          // Fallback to new workspace view
+          // Close: go to new workspace view
           setSelectedChatId(null)
         }
       }
@@ -1877,6 +2032,15 @@ export function AgentsSidebar({
     }
     return chatIdsWithPendingPlans
   }, [pendingPlanApprovalsData])
+
+  // Get workspace IDs that have pending user questions
+  const workspacePendingQuestions = useMemo(() => {
+    const chatIds = new Set<string>()
+    for (const question of pendingQuestions.values()) {
+      chatIds.add(question.parentChatId)
+    }
+    return chatIds
+  }, [pendingQuestions])
 
   const handleNewAgent = () => {
     triggerHaptic("light")
@@ -2304,7 +2468,6 @@ export function AgentsSidebar({
         onToggleSidebar={onToggleSidebar}
         setSettingsDialogOpen={setSettingsDialogOpen}
         setSettingsActiveTab={setSettingsActiveTab}
-        setShortcutsDialogOpen={setShortcutsDialogOpen}
         setShowAuthDialog={setShowAuthDialog}
         handleSidebarMouseEnter={handleSidebarMouseEnter}
         handleSidebarMouseLeave={handleSidebarMouseLeave}
@@ -2453,6 +2616,7 @@ export function AgentsSidebar({
                 loadingChatIds={loadingChatIds}
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
+                workspacePendingQuestions={workspacePendingQuestions}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}
@@ -2493,6 +2657,7 @@ export function AgentsSidebar({
                 loadingChatIds={loadingChatIds}
                 unseenChanges={unseenChanges}
                 workspacePendingPlans={workspacePendingPlans}
+                workspacePendingQuestions={workspacePendingQuestions}
                 isMultiSelectMode={isMultiSelectMode}
                 selectedChatIds={selectedChatIds}
                 isMobileFullscreen={isMobileFullscreen}

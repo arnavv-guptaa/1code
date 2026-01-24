@@ -1,13 +1,29 @@
 import { atom } from "jotai"
-import { atomWithStorage } from "jotai/utils"
+import { atomFamily, atomWithStorage } from "jotai/utils"
 import type { TerminalInstance } from "./types"
 
-export const terminalSidebarOpenAtom = atomWithStorage<boolean>(
-  "terminal-sidebar-open",
-  false,
+// Storage atom for persisting per-chat terminal sidebar state
+const terminalSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
+  "terminal-sidebar-open-by-chat",
+  {},
   undefined,
   { getOnInit: true },
 )
+
+// Per-chat terminal sidebar open state (like diffSidebarOpenAtomFamily)
+export const terminalSidebarOpenAtomFamily = atomFamily((chatId: string) =>
+  atom(
+    (get) => get(terminalSidebarOpenStorageAtom)[chatId] ?? false,
+    (get, set, isOpen: boolean) => {
+      const current = get(terminalSidebarOpenStorageAtom)
+      set(terminalSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
+    },
+  ),
+)
+
+// Deprecated: Keep for backwards compatibility, but should not be used
+// Use terminalSidebarOpenAtomFamily(chatId) instead
+export const terminalSidebarOpenAtom = atom(false)
 
 export const terminalSidebarWidthAtom = atomWithStorage<number>(
   "terminal-sidebar-width",

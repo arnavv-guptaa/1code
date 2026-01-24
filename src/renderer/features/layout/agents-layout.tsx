@@ -8,17 +8,16 @@ import {
   agentsSidebarWidthAtom,
   agentsSettingsDialogOpenAtom,
   agentsSettingsDialogActiveTabAtom,
-  agentsShortcutsDialogOpenAtom,
   isDesktopAtom,
   isFullscreenAtom,
   anthropicOnboardingCompletedAtom,
+  customHotkeysAtom,
 } from "../../lib/atoms"
 import { selectedAgentChatIdAtom, selectedProjectAtom } from "../agents/atoms"
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
 import { AgentsSettingsDialog } from "../../components/dialogs/agents-settings-dialog"
-import { AgentsShortcutsDialog } from "../../components/dialogs/agents-shortcuts-dialog"
 import { ClaudeLoginModal } from "../../components/dialogs/claude-login-modal"
 import { TooltipProvider } from "../../components/ui/tooltip"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
@@ -89,9 +88,6 @@ export function AgentsLayout() {
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom)
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
-  const [shortcutsOpen, setShortcutsOpen] = useAtom(
-    agentsShortcutsDialogOpenAtom,
-  )
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
   const setAnthropicOnboardingCompleted = useSetAtom(
@@ -214,15 +210,18 @@ export function AgentsLayout() {
   // Chat search toggle
   const toggleChatSearch = useSetAtom(toggleSearchAtom)
 
+  // Custom hotkeys config
+  const customHotkeysConfig = useAtomValue(customHotkeysAtom)
+
   // Initialize hotkeys manager
   useAgentsHotkeys({
     setSelectedChatId,
     setSidebarOpen,
     setSettingsDialogOpen: setSettingsOpen,
     setSettingsActiveTab,
-    setShortcutsDialogOpen: setShortcutsOpen,
     toggleChatSearch,
     selectedChatId,
+    customHotkeysConfig,
   })
 
   const handleCloseSidebar = useCallback(() => {
@@ -236,10 +235,6 @@ export function AgentsLayout() {
       <AgentsSettingsDialog
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-      />
-      <AgentsShortcutsDialog
-        isOpen={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
       />
       <ClaudeLoginModal />
       <div className="flex flex-col w-full h-full relative overflow-hidden bg-background select-none">

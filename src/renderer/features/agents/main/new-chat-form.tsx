@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { AlignJustify, Plus, WifiOff } from "lucide-react"
+import { AlignJustify, Plus, Zap } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button } from "../../../components/ui/button"
@@ -53,6 +53,7 @@ import {
   customClaudeConfigAtom,
   normalizeCustomClaudeConfig,
   showOfflineModeFeaturesAtom,
+  selectedOllamaModelAtom,
 } from "../../../lib/atoms"
 // Desktop uses real tRPC
 import { toast } from "sonner"
@@ -60,6 +61,7 @@ import { trpc } from "../../../lib/trpc"
 import {
   AgentsSlashCommand,
   COMMAND_PROMPTS,
+  BUILTIN_SLASH_COMMANDS,
   type SlashCommandOption,
 } from "../commands"
 import { useAgentsFileUpload } from "../hooks/use-agents-file-upload"
@@ -103,31 +105,30 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
-// Hook to get available models (including offline model if Ollama is available and debug enabled)
+// Hook to get available models (including offline models if Ollama is available and debug enabled)
 function useAvailableModels() {
-  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
-    refetchInterval: 30000,
-  })
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
+    refetchInterval: showOfflineFeatures ? 30000 : false,
+    enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
+  })
 
   const baseModels = CLAUDE_MODELS
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
-  const hasOllama = ollamaStatus?.ollama.available && !!ollamaStatus.ollama.recommendedModel
+  const hasOllama = ollamaStatus?.ollama.available && (ollamaStatus.ollama.models?.length ?? 0) > 0
+  const ollamaModels = ollamaStatus?.ollama.models || []
+  const recommendedModel = ollamaStatus?.ollama.recommendedModel
 
-  // Only show offline model if:
+  // Only show offline models if:
   // 1. Debug flag is enabled (showOfflineFeatures)
-  // 2. Ollama is available
+  // 2. Ollama is available with models
   // 3. User is actually offline
   if (showOfflineFeatures && hasOllama && isOffline) {
     return {
-      models: [
-        ...baseModels,
-        {
-          id: "offline",
-          name: ollamaStatus.ollama.recommendedModel,
-        },
-      ],
+      models: baseModels,
+      ollamaModels,
+      recommendedModel,
       isOffline,
       hasOllama: true,
     }
@@ -135,6 +136,8 @@ function useAvailableModels() {
 
   return {
     models: baseModels,
+    ollamaModels: [] as string[],
+    recommendedModel: undefined as string | undefined,
     isOffline,
     hasOllama: false,
   }
@@ -261,29 +264,37 @@ export function NewChatForm({
 
   // Get available models (with offline support)
   const availableModels = useAvailableModels()
+  const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
 
   const [selectedModel, setSelectedModel] = useState(
     () =>
       availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[1],
   )
+
+  // Determine current Ollama model (selected or recommended)
+  const currentOllamaModel = selectedOllamaModel || availableModels.recommendedModel || availableModels.ollamaModels[0]
   const [repoPopoverOpen, setRepoPopoverOpen] = useState(false)
   const [branchPopoverOpen, setBranchPopoverOpen] = useState(false)
   const [lastSelectedBranches, setLastSelectedBranches] = useAtom(
     lastSelectedBranchesAtom,
   )
   const [branchSearch, setBranchSearch] = useState("")
+  const [selectedBranchType, setSelectedBranchType] = useState<
+    "local" | "remote" | undefined
+  >(undefined)
 
   // Get/set selected branch for current project (persisted per project)
   const selectedBranch = validatedProject?.id
-    ? lastSelectedBranches[validatedProject.id] || ""
+    ? lastSelectedBranches[validatedProject.id]?.name || ""
     : ""
   const setSelectedBranch = useCallback(
-    (branch: string) => {
-      if (validatedProject?.id) {
+    (branch: string, type?: "local" | "remote") => {
+      if (validatedProject?.id && type) {
         setLastSelectedBranches((prev) => ({
           ...prev,
-          [validatedProject.id]: branch,
+          [validatedProject.id]: { name: branch, type },
         }))
+        setSelectedBranchType(type)
       }
     },
     [validatedProject?.id, setLastSelectedBranches],
@@ -291,6 +302,20 @@ export function NewChatForm({
   const branchListRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<AgentsMentionsEditorHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Restore selectedBranchType from persisted storage when project changes
+  useEffect(() => {
+    if (validatedProject?.id) {
+      const stored = lastSelectedBranches[validatedProject.id]
+      if (stored?.type) {
+        setSelectedBranchType(stored.type)
+      } else {
+        setSelectedBranchType(undefined)
+      }
+    } else {
+      setSelectedBranchType(undefined)
+    }
+  }, [validatedProject?.id, lastSelectedBranches])
 
   // Image upload hook
   const {
@@ -423,39 +448,44 @@ export function NewChatForm({
     },
   )
 
+  const fetchRemoteMutation = trpc.changes.fetchRemote.useMutation()
+
+  // Manual refresh branches
+  const handleRefreshBranches = useCallback(() => {
+    if (validatedProject?.path) {
+      fetchRemoteMutation.mutate(
+        { worktreePath: validatedProject.path },
+        {
+          onSuccess: () => {
+            branchesQuery.refetch()
+          },
+          onError: (error) => {
+            console.error("Failed to fetch remote branches:", error)
+          },
+        },
+      )
+    }
+  }, [validatedProject?.path, fetchRemoteMutation, branchesQuery])
+
   // Transform branch data to match web app format
   const branches = useMemo(() => {
     if (!branchesQuery.data) return []
 
     const { local, remote, defaultBranch } = branchesQuery.data
+    const result: Array<{
+      name: string
+      type: "local" | "remote"
+      protected: boolean
+      isDefault: boolean
+      committedAt: string | null
+      authorName: null
+    }> = []
 
-    // Combine local and remote branches, preferring local info
-    const branchMap = new Map<
-      string,
-      {
-        name: string
-        protected: boolean
-        isDefault: boolean
-        committedAt: string | null
-        authorName: null
-      }
-    >()
-
-    // Add remote branches first
-    for (const name of remote) {
-      branchMap.set(name, {
-        name,
-        protected: false,
-        isDefault: name === defaultBranch,
-        committedAt: null,
-        authorName: null,
-      })
-    }
-
-    // Override with local branches (they have commit dates)
+    // Add local branches
     for (const { branch, lastCommitDate } of local) {
-      branchMap.set(branch, {
+      result.push({
         name: branch,
+        type: "local",
         protected: false,
         isDefault: branch === defaultBranch,
         committedAt: lastCommitDate
@@ -465,18 +495,23 @@ export function NewChatForm({
       })
     }
 
-    // Sort: default first, then by commit date
-    return Array.from(branchMap.values()).sort((a, b) => {
+    // Add remote branches
+    for (const name of remote) {
+      result.push({
+        name: name,
+        type: "remote",
+        protected: false,
+        isDefault: name === defaultBranch,
+        committedAt: null,
+        authorName: null,
+      })
+    }
+
+    // Sort: default first, then local, then remote, alphabetically
+    return result.sort((a, b) => {
       if (a.isDefault && !b.isDefault) return -1
       if (!a.isDefault && b.isDefault) return 1
-      // Sort by commit date (most recent first)
-      if (a.committedAt && b.committedAt) {
-        return (
-          new Date(b.committedAt).getTime() - new Date(a.committedAt).getTime()
-        )
-      }
-      if (a.committedAt) return -1
-      if (b.committedAt) return 1
+      if (a.type !== b.type) return a.type === "local" ? -1 : 1
       return a.name.localeCompare(b.name)
     })
   }, [branchesQuery.data])
@@ -521,13 +556,26 @@ export function NewChatForm({
       validatedProject?.id &&
       !selectedBranch
     ) {
-      setSelectedBranch(branchesQuery.data.defaultBranch)
+      // Find the default branch in the branches list to get its type
+      // Prefer local over remote if both exist
+      const defaultBranchObj = branches.find(
+        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "local",
+      ) || branches.find(
+        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "remote",
+      )
+      // Fallback to "local" if branch not found in list (shouldn't happen but prevents empty selector)
+      const branchType = defaultBranchObj?.type || "local"
+      setSelectedBranch(
+        branchesQuery.data.defaultBranch,
+        branchType,
+      )
     }
   }, [
     branchesQuery.data?.defaultBranch,
     validatedProject?.id,
     selectedBranch,
     setSelectedBranch,
+    branches,
   ])
 
   // Auto-focus input when NewChatForm is shown (when clicking "New Chat")
@@ -563,6 +611,11 @@ export function NewChatForm({
         editorRef.current.clear()
         setHasContent(false)
       }
+
+      // Fetch remote branches in background when starting new workspace
+      if (hadDraftBefore && validatedProject?.path) {
+        handleRefreshBranches()
+      }
       return
     }
 
@@ -585,7 +638,7 @@ export function NewChatForm({
         return () => clearTimeout(timeoutId)
       }
     }
-  }, [selectedDraftId])
+  }, [selectedDraftId, handleRefreshBranches, validatedProject?.path])
 
   // Mark draft as visible when component unmounts (user navigates away)
   // This ensures the draft only appears in the sidebar after leaving the form
@@ -694,12 +747,45 @@ export function NewChatForm({
     }
   }
 
-  const handleSend = useCallback(() => {
+  const trpcUtils = trpc.useUtils()
+
+  const handleSend = useCallback(async () => {
     // Get value from uncontrolled editor
-    const message = editorRef.current?.getValue() || ""
+    let message = editorRef.current?.getValue() || ""
 
     if (!message.trim() || !selectedProject) {
       return
+    }
+
+    // Check if message is a slash command with arguments (e.g. "/hello world")
+    const slashMatch = message.match(/^\/(\S+)\s*(.*)$/)
+    if (slashMatch) {
+      const [, commandName, args] = slashMatch
+
+      // Check if it's a builtin command - if so, don't process as custom command
+      const builtinNames = new Set(
+        BUILTIN_SLASH_COMMANDS.map((cmd) => cmd.name),
+      )
+      if (!builtinNames.has(commandName)) {
+        // This is a custom command - load content and replace $ARGUMENTS
+        try {
+          const commands = await trpcUtils.commands.list.fetch({
+            projectPath: validatedProject?.path,
+          })
+          const cmd = commands.find((c) => c.name === commandName)
+
+          if (cmd) {
+            const { content } = await trpcUtils.commands.getContent.fetch({
+              path: cmd.path,
+            })
+            // Replace $ARGUMENTS with the provided args
+            message = content.replace(/\$ARGUMENTS/g, args.trim())
+          }
+        } catch (error) {
+          console.error("Failed to process custom command:", error)
+          // Fall through with original message
+        }
+      }
     }
 
     // Build message parts array (images first, then text)
@@ -738,18 +824,23 @@ export function NewChatForm({
       initialMessageParts: parts.length > 0 ? parts : undefined,
       baseBranch:
         workMode === "worktree" ? selectedBranch || undefined : undefined,
+      branchType:
+        workMode === "worktree" ? selectedBranchType : undefined,
       useWorktree: workMode === "worktree",
       mode: isPlanMode ? "plan" : "agent",
     })
     // Editor and images are cleared in onSuccess callback
   }, [
     selectedProject,
+    validatedProject?.path,
     createChatMutation,
     hasContent,
     selectedBranch,
+    selectedBranchType,
     workMode,
     images,
     isPlanMode,
+    trpcUtils,
   ])
 
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
@@ -915,8 +1006,12 @@ export function NewChatForm({
         return
       }
 
-      // Handle repository commands - auto-send to agent
-      if (command.prompt) {
+      // Handle custom commands
+      if (command.argumentHint) {
+        // Command expects arguments - insert command and let user add args
+        editorRef.current?.setValue(`/${command.name} `)
+      } else if (command.prompt) {
+        // Command without arguments - send immediately
         editorRef.current?.setValue(command.prompt)
         setTimeout(() => handleSend(), 0)
       }
@@ -1296,95 +1391,111 @@ export function NewChatForm({
                           )}
                       </DropdownMenu>
 
-                      {/* Model selector */}
-                      <DropdownMenu
-                        open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
-                        onOpenChange={(open) => {
-                          if (!hasCustomClaudeConfig) {
-                            setIsModelDropdownOpen(open)
-                          }
-                        }}
-                      >
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            disabled={hasCustomClaudeConfig}
-                            className={cn(
-                              "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-[background-color,color] duration-150 ease-out rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
-                              hasCustomClaudeConfig
-                                ? "opacity-70 cursor-not-allowed"
-                                : "hover:text-foreground hover:bg-muted/50",
-                            )}
-                          >
-                            {hasCustomClaudeConfig ? (
-                              <ClaudeCodeIcon className="h-3.5 w-3.5" />
-                            ) : selectedModel?.id === "offline" ? (
-                              <WifiOff className="h-3.5 w-3.5" />
-                            ) : (
-                              <ClaudeCodeIcon className="h-3.5 w-3.5" />
-                            )}
-                            <span>
-                              {hasCustomClaudeConfig ? (
-                                "Custom Model"
-                              ) : selectedModel?.id === "offline" ? (
-                                selectedModel.name
-                              ) : (
-                                <>
-                                  {selectedModel?.name}{" "}
-                                  <span className="text-muted-foreground">4.5</span>
-                                </>
-                              )}
-                            </span>
-                            <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="start"
-                          className="w-[200px]"
+                      {/* Model selector - shows Ollama models when offline, Claude models when online */}
+                      {availableModels.isOffline && availableModels.hasOllama ? (
+                        // Offline mode: show Ollama model selector
+                        <DropdownMenu
+                          open={isModelDropdownOpen}
+                          onOpenChange={setIsModelDropdownOpen}
                         >
-                          {availableModels.models.map((model) => {
-                            const isSelected = selectedModel?.id === model.id
-                            const isOfflineModel = model.id === "offline"
-                            // Disable non-offline models when offline
-                            const isDisabled = availableModels.isOffline && !isOfflineModel
-                            return (
-                              <DropdownMenuItem
-                                key={model.id}
-                                onClick={() => {
-                                  if (!isDisabled) {
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-[background-color,color] duration-150 ease-out rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 border border-border"
+                            >
+                              <Zap className="h-4 w-4" />
+                              <span>{currentOllamaModel || "Select model"}</span>
+                              <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-[240px]">
+                            {availableModels.ollamaModels.map((model) => {
+                              const isSelected = model === currentOllamaModel
+                              const isRecommended = model === availableModels.recommendedModel
+                              return (
+                                <DropdownMenuItem
+                                  key={model}
+                                  onClick={() => setSelectedOllamaModel(model)}
+                                  className="gap-2 justify-between"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    <span>
+                                      {model}
+                                      {isRecommended && (
+                                        <span className="text-muted-foreground ml-1">(recommended)</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {isSelected && (
+                                    <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                </DropdownMenuItem>
+                              )
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        // Online mode: show Claude model selector
+                        <DropdownMenu
+                          open={hasCustomClaudeConfig ? false : isModelDropdownOpen}
+                          onOpenChange={(open) => {
+                            if (!hasCustomClaudeConfig) {
+                              setIsModelDropdownOpen(open)
+                            }
+                          }}
+                        >
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              disabled={hasCustomClaudeConfig}
+                              className={cn(
+                                "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-[background-color,color] duration-150 ease-out rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                                hasCustomClaudeConfig
+                                  ? "opacity-70 cursor-not-allowed"
+                                  : "hover:text-foreground hover:bg-muted/50",
+                              )}
+                            >
+                              <ClaudeCodeIcon className="h-3.5 w-3.5" />
+                              <span>
+                                {hasCustomClaudeConfig ? (
+                                  "Custom Model"
+                                ) : (
+                                  <>
+                                    {selectedModel?.name}{" "}
+                                    <span className="text-muted-foreground">4.5</span>
+                                  </>
+                                )}
+                              </span>
+                              <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-[200px]">
+                            {availableModels.models.map((model) => {
+                              const isSelected = selectedModel?.id === model.id
+                              return (
+                                <DropdownMenuItem
+                                  key={model.id}
+                                  onClick={() => {
                                     setSelectedModel(model)
                                     setLastSelectedModelId(model.id)
-                                  }
-                                }}
-                                className="gap-2 justify-between"
-                                disabled={isDisabled}
-                              >
-                                <div className="flex items-center gap-1.5">
-                                  {isOfflineModel ? (
-                                    <WifiOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  ) : (
+                                  }}
+                                  className="gap-2 justify-between"
+                                >
+                                  <div className="flex items-center gap-1.5">
                                     <ClaudeCodeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    <span>
+                                      {model.name}{" "}
+                                      <span className="text-muted-foreground">4.5</span>
+                                    </span>
+                                  </div>
+                                  {isSelected && (
+                                    <CheckIcon className="h-3.5 w-3.5 shrink-0" />
                                   )}
-                                  <span>
-                                    {isOfflineModel ? (
-                                      model.name
-                                    ) : (
-                                      <>
-                                        {model.name}{" "}
-                                        <span className="text-muted-foreground">
-                                          4.5
-                                        </span>
-                                      </>
-                                    )}
-                                  </span>
-                                </div>
-                                {isSelected && (
-                                  <CheckIcon className="h-3.5 w-3.5 shrink-0" />
-                                )}
-                              </DropdownMenuItem>
-                            )
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                                </DropdownMenuItem>
+                              )
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
@@ -1523,13 +1634,14 @@ export function NewChatForm({
                                   const branch =
                                     filteredBranches[virtualItem.index]
                                   const isSelected =
-                                    selectedBranch === branch.name ||
-                                    (!selectedBranch && branch.isDefault)
+                                    (selectedBranch === branch.name &&
+                                      selectedBranchType === branch.type) ||
+                                    (!selectedBranch && branch.isDefault && branch.type === "local")
                                   return (
                                     <button
-                                      key={branch.name}
+                                      key={`${branch.type}-${branch.name}`}
                                       onClick={() => {
-                                        setSelectedBranch(branch.name)
+                                        setSelectedBranch(branch.name, branch.type)
                                         setBranchPopoverOpen(false)
                                         setBranchSearch("")
                                       }}
@@ -1547,6 +1659,16 @@ export function NewChatForm({
                                       <BranchIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                                       <span className="truncate flex-1">
                                         {branch.name}
+                                      </span>
+                                      <span
+                                        className={cn(
+                                          "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                                          branch.type === "local"
+                                            ? "bg-blue-500/10 text-blue-500"
+                                            : "bg-orange-500/10 text-orange-500",
+                                        )}
+                                      >
+                                        {branch.type}
                                       </span>
                                       {branch.committedAt && (
                                         <span className="text-xs text-muted-foreground/70 shrink-0">
@@ -1584,7 +1706,7 @@ export function NewChatForm({
                         branchesQuery.data?.defaultBranch || "main"
                       }
                       onBranchCreated={(branchName) => {
-                        setSelectedBranch(branchName)
+                        setSelectedBranch(branchName, "local")
                       }}
                     />
                   )}
@@ -1654,8 +1776,7 @@ export function NewChatForm({
                   onSelect={handleSlashSelect}
                   searchText={slashSearchText}
                   position={slashPosition}
-                  teamId={selectedTeamId || undefined}
-                  repository={resolvedRepo?.full_name}
+                  projectPath={validatedProject?.path}
                   isPlanMode={isPlanMode}
                   disabledCommands={["clear"]}
                 />

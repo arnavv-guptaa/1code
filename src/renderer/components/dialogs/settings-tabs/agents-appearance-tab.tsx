@@ -10,6 +10,7 @@ import {
   systemLightThemeIdAtom,
   systemDarkThemeIdAtom,
   showWorkspaceIconAtom,
+  alwaysExpandTodoListAtom,
   type VSCodeFullTheme,
 } from "../../../lib/atoms"
 import {
@@ -139,6 +140,9 @@ export function AgentsAppearanceTab() {
 
   // Sidebar settings
   const [showWorkspaceIcon, setShowWorkspaceIcon] = useAtom(showWorkspaceIconAtom)
+
+  // To-do list preference
+  const [alwaysExpandTodoList, setAlwaysExpandTodoList] = useAtom(alwaysExpandTodoListAtom)
 
   useEffect(() => {
     setMounted(true)
@@ -483,7 +487,7 @@ export function AgentsAppearanceTab() {
         </AnimatePresence>
       </div>
 
-      {/* Sidebar Section */}
+      {/* Display Options Section */}
       <div className="bg-background rounded-lg border border-border overflow-hidden">
         <div className="flex items-center justify-between p-4">
           <div className="flex flex-col space-y-1">
@@ -497,6 +501,20 @@ export function AgentsAppearanceTab() {
           <Switch
             checked={showWorkspaceIcon}
             onCheckedChange={setShowWorkspaceIcon}
+          />
+        </div>
+        <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex flex-col space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              Always expand to-do list
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Show the full to-do list instead of compact view
+            </span>
+          </div>
+          <Switch
+            checked={alwaysExpandTodoList}
+            onCheckedChange={setAlwaysExpandTodoList}
           />
         </div>
       </div>

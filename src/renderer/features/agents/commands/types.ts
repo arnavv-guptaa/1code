@@ -15,6 +15,8 @@ export interface SlashCommand {
   path?: string
   // For repository commands - the repository name
   repository?: string
+  // For custom commands - hint for expected arguments (e.g. "[file_path]")
+  argumentHint?: string
 }
 
 export interface SlashCommandOption extends SlashCommand {

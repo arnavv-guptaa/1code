@@ -1412,4 +1412,21 @@ export const filesRouter = router({
         throw new Error(`Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }),
+
+  /**
+   * Read file contents from filesystem
+   */
+  readFile: publicProcedure
+    .input(z.object({ filePath: z.string() }))
+    .query(async ({ input }) => {
+      const { filePath } = input
+
+      try {
+        const content = await readFile(filePath, "utf-8")
+        return content
+      } catch (error) {
+        console.error(`[files] Error reading file ${filePath}:`, error)
+        throw new Error(`Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }),
 })

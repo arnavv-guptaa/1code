@@ -1,5 +1,6 @@
 import { AuthStore, AuthData, AuthUser } from "./auth-store"
 import { app, BrowserWindow } from "electron"
+import { AUTH_SERVER_PORT } from "./constants"
 
 // Get API URL - in packaged app always use production, in dev allow override
 function getApiBaseUrl(): string {
@@ -210,10 +211,10 @@ export class AuthManager {
 
     let authUrl = `${this.getApiUrl()}/auth/desktop?auto=true`
 
-    // In dev mode, use localhost callback (we run HTTP server on port 21321)
+    // In dev mode, use localhost callback (we run HTTP server on AUTH_SERVER_PORT)
     // Also pass the protocol so web knows which deep link to use as fallback
     if (this.isDev) {
-      authUrl += `&callback=${encodeURIComponent("http://localhost:21321/auth/callback")}`
+      authUrl += `&callback=${encodeURIComponent(`http://localhost:${AUTH_SERVER_PORT}/auth/callback`)}`
       // Pass dev protocol so production web can use correct deep link if callback fails
       authUrl += `&protocol=twentyfirst-agents-dev`
     }
@@ -249,5 +250,30 @@ export class AuthManager {
 
     // Update locally
     return this.store.updateUser({ name: updates.name ?? null })
+  }
+
+  /**
+   * Fetch user's subscription plan from web backend
+   * Used for PostHog analytics enrichment
+   */
+  async fetchUserPlan(): Promise<{ email: string; plan: string; status: string | null } | null> {
+    const token = await this.getValidToken()
+    if (!token) return null
+
+    try {
+      const response = await fetch(`${this.getApiUrl()}/api/desktop/user/plan`, {
+        headers: { "X-Desktop-Token": token },
+      })
+
+      if (!response.ok) {
+        console.error("[AuthManager] Failed to fetch user plan:", response.status)
+        return null
+      }
+
+      return response.json()
+    } catch (error) {
+      console.error("[AuthManager] Failed to fetch user plan:", error)
+      return null
+    }
   }
 }

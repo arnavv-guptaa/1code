@@ -21,7 +21,6 @@ export interface AgentActionContext {
   setSidebarOpen?: (open: boolean | ((prev: boolean) => boolean)) => void
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
-  setShortcutsDialogOpen?: (open: boolean) => void
   toggleChatSearch?: () => void
 
   // Data
@@ -59,7 +58,9 @@ const openShortcutsAction: AgentActionDefinition = {
   category: "general",
   hotkey: "?",
   handler: async (context) => {
-    context.setShortcutsDialogOpen?.(true)
+    // Open settings dialog on Keyboard tab instead of separate shortcuts dialog
+    context.setSettingsActiveTab?.("keyboard")
+    context.setSettingsDialogOpen?.(true)
     return { success: true }
   },
 }

@@ -20,7 +20,7 @@ import { Terminal } from "./terminal"
 import { TerminalTabs } from "./terminal-tabs"
 import { getDefaultTerminalBg } from "./helpers"
 import {
-  terminalSidebarOpenAtom,
+  terminalSidebarOpenAtomFamily,
   terminalSidebarWidthAtom,
   terminalsAtom,
   activeTerminalIdAtom,
@@ -86,7 +86,12 @@ export function TerminalSidebar({
   isMobileFullscreen = false,
   onClose,
 }: TerminalSidebarProps) {
-  const [isOpen, setIsOpen] = useAtom(terminalSidebarOpenAtom)
+  // Per-chat terminal sidebar state
+  const terminalSidebarAtom = useMemo(
+    () => terminalSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const [isOpen, setIsOpen] = useAtom(terminalSidebarAtom)
   const [allTerminals, setAllTerminals] = useAtom(terminalsAtom)
   const [allActiveIds, setAllActiveIds] = useAtom(activeTerminalIdAtom)
   const terminalCwds = useAtomValue(terminalCwdAtom)

@@ -175,6 +175,7 @@ export type SettingsTab =
   | "worktrees"
   | "debug"
   | "beta"
+  | "keyboard"
   | `project-${string}` // Dynamic project tabs
 export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
@@ -193,7 +194,27 @@ export type ModelProfile = {
   isOffline?: boolean // Mark as offline/Ollama profile
 }
 
-// Predefined offline profile for Ollama
+// Selected Ollama model for offline mode
+export const selectedOllamaModelAtom = atomWithStorage<string | null>(
+  "agents:selected-ollama-model",
+  null, // null = use recommended model
+  undefined,
+  { getOnInit: true },
+)
+
+// Helper to get offline profile with selected model
+export const getOfflineProfile = (modelName?: string | null): ModelProfile => ({
+  id: 'offline-ollama',
+  name: 'Offline (Ollama)',
+  isOffline: true,
+  config: {
+    model: modelName || 'qwen2.5-coder:7b',
+    token: 'ollama',
+    baseUrl: 'http://localhost:11434',
+  },
+})
+
+// Predefined offline profile for Ollama (legacy, uses default model)
 export const OFFLINE_PROFILE: ModelProfile = {
   id: 'offline-ollama',
   name: 'Offline (Ollama)',
@@ -384,6 +405,16 @@ export const ctrlTabTargetAtom = atomWithStorage<CtrlTabTarget>(
   { getOnInit: true },
 )
 
+// Preferences - Auto-advance after archive
+// Controls where to navigate after archiving a workspace
+export type AutoAdvanceTarget = "next" | "previous" | "close"
+export const autoAdvanceTargetAtom = atomWithStorage<AutoAdvanceTarget>(
+  "preferences:auto-advance-target",
+  "next", // Default: go to next workspace
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - VS Code Code Themes
 // Selected themes for code syntax highlighting (separate for light/dark UI themes)
 export const vscodeCodeThemeLightAtom = atomWithStorage<string>(
@@ -463,6 +494,18 @@ export const showWorkspaceIconAtom = atomWithStorage<boolean>(
 )
 
 /**
+ * Always expand to-do list
+ * When enabled, to-do lists are always shown expanded (full list view)
+ * When disabled (default), to-do lists start collapsed and can be expanded manually
+ */
+export const alwaysExpandTodoListAtom = atomWithStorage<boolean>(
+  "preferences:always-expand-todo-list",
+  false, // Collapsed by default
+  undefined,
+  { getOnInit: true },
+)
+
+/**
  * Cached full theme data for the selected theme
  * This is populated when a theme is selected and used for applying CSS variables
  */
@@ -478,8 +521,29 @@ export const allFullThemesAtom = atom<VSCodeFullTheme[]>((get) => {
   return []
 })
 
-// Shortcuts dialog
-export const agentsShortcutsDialogOpenAtom = atom<boolean>(false)
+// ============================================
+// CUSTOM HOTKEYS CONFIGURATION
+// ============================================
+
+import type { CustomHotkeysConfig } from "../hotkeys/types"
+export type { CustomHotkeysConfig }
+
+/**
+ * Custom hotkey overrides storage
+ * Maps action IDs to custom hotkey strings (or null for default)
+ */
+export const customHotkeysAtom = atomWithStorage<CustomHotkeysConfig>(
+  "preferences:custom-hotkeys",
+  { version: 1, bindings: {} },
+  undefined,
+  { getOnInit: true },
+)
+
+/**
+ * Currently recording hotkey for action (UI state)
+ * null when not recording
+ */
+export const recordingHotkeyForActionAtom = atom<string | null>(null)
 
 // Login modal (shown when Claude Code auth fails)
 export const agentsLoginModalOpenAtom = atom<boolean>(false)
@@ -616,3 +680,11 @@ export const sessionInfoAtom = atomWithStorage<SessionInfo | null>(
   undefined,
   { getOnInit: true },
 )
+
+// ============================================
+// DEV TOOLS UNLOCK (Hidden feature)
+// ============================================
+
+// DevTools unlock state (hidden feature - click Beta tab 5 times to enable)
+// Persisted per-session only (not in localStorage for security)
+export const devToolsUnlockedAtom = atom<boolean>(false)

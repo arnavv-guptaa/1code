@@ -1363,7 +1363,13 @@ export function LoadingDot({
 }) {
   return (
     <div className={`relative ${className || ""}`}>
-      {/* Spinner - visible when loading. Uses global synchronized-spin keyframes from globals.css */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+      {/* Spinner - visible when loading */}
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -1371,7 +1377,7 @@ export function LoadingDot({
           isLoading ? "opacity-100 scale-100" : "opacity-0 scale-50"
         }`}
         style={{
-          animation: isLoading ? 'synchronized-spin 1s linear infinite' : undefined,
+          animation: isLoading ? 'spin 1s linear infinite' : undefined,
         }}
       >
         <circle
@@ -2840,6 +2846,26 @@ export const KeyboardIcon = (props: IconProps) => {
   )
 }
 
+export const KeyboardFilledIcon = (props: IconProps) => {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M19 3C19 2.44772 18.5523 2 18 2C17.4477 2 17 2.44772 17 3V3.5C17 3.77614 16.7761 4 16.5 4H8C6.34315 4 5 5.34315 5 7V8H4C2.34315 8 1 9.34315 1 11V19C1 20.6569 2.34315 22 4 22H20C21.6569 22 23 20.6569 23 19V11C23 9.34315 21.6569 8 20 8H7V7C7 6.44772 7.44772 6 8 6H16.5C17.8807 6 19 4.88071 19 3.5V3ZM10 16C9.44771 16 9 16.4477 9 17C9 17.5523 9.44771 18 10 18H14C14.5523 18 15 17.5523 15 17C15 16.4477 14.5523 16 14 16H10ZM4.75 13C4.75 13.6904 5.30964 14.25 6 14.25C6.69036 14.25 7.25 13.6904 7.25 13C7.25 12.3096 6.69036 11.75 6 11.75C5.30964 11.75 4.75 12.3096 4.75 13ZM16.75 13C16.75 13.6904 17.3096 14.25 18 14.25C18.6904 14.25 19.25 13.6904 19.25 13C19.25 12.3096 18.6904 11.75 18 11.75C17.3096 11.75 16.75 12.3096 16.75 13ZM14 14.25C13.3096 14.25 12.75 13.6904 12.75 13C12.75 12.3096 13.3096 11.75 14 11.75C14.6904 11.75 15.25 12.3096 15.25 13C15.25 13.6904 14.6904 14.25 14 14.25ZM8.75 13C8.75 13.6904 9.30964 14.25 10 14.25C10.6904 14.25 11.25 13.6904 11.25 13C11.25 12.3096 10.6904 11.75 10 11.75C9.30964 11.75 8.75 12.3096 8.75 13ZM6 18.25C5.30964 18.25 4.75 17.6904 4.75 17C4.75 16.3096 5.30964 15.75 6 15.75C6.69036 15.75 7.25 16.3096 7.25 17C7.25 17.6904 6.69036 18.25 6 18.25ZM16.75 17C16.75 17.6904 17.3096 18.25 18 18.25C18.6904 18.25 19.25 17.6904 19.25 17C19.25 16.3096 18.6904 15.75 18 15.75C17.3096 15.75 16.75 16.3096 16.75 17Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 export const BookIcon = (props: IconProps) => {
   return (
     <svg
@@ -2995,6 +3021,27 @@ export const ShiftIcon = (props: IconProps) => {
         stroke="currentColor"
         strokeWidth="2.4"
         strokeLinecap="square"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export const ControlIcon = (props: IconProps) => {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      <path
+        d="M6 14L12 8L18 14"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
@@ -5638,6 +5685,59 @@ export function AIPenIcon(props: IconProps) {
           strokeLinejoin="round"
         />
       </g>
+    </svg>
+  )
+}
+
+export function ThinkingIcon(props: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      width="24"
+      height="24"
+      {...props}
+    >
+      <path
+        d="M5.94 4.91257L8.2012 3.49932C8.70708 3.18315 9.3277 3.1093 9.89365 3.29795L11.3675 3.78925C11.7781 3.9261 12.2219 3.9261 12.6325 3.78925L14.1064 3.29795C14.6723 3.1093 15.2929 3.18314 15.7988 3.49932L18.06 4.91257C18.6448 5.27805 19 5.91899 19 6.60857V7.00007C19 7.62958 19.2964 8.22236 19.8 8.60007L20.2 8.90007C20.7036 9.27778 21 9.87056 21 10.5001V12.5001C21 13.1296 20.7036 13.7224 20.2 14.1001L19.8 14.4001C19.2964 14.7778 19 15.3706 19 16.0001V17.3916C19 18.0812 18.6448 18.7221 18.06 19.0876L15.7988 20.5008C15.2929 20.817 14.6723 20.8908 14.1064 20.7022L12.6325 20.2109C12.2219 20.074 11.7781 20.074 11.3675 20.2109L9.89365 20.7022C9.3277 20.8908 8.70708 20.817 8.2012 20.5008L5.94 19.0876C5.35524 18.7221 5 18.0812 5 17.3916V16.0001C5 15.3706 4.70361 14.7778 4.2 14.4001L3.8 14.1001C3.29639 13.7224 3 13.1296 3 12.5001V10.5001C3 9.87056 3.29639 9.27778 3.8 8.90007L4.2 8.60007C4.70361 8.22236 5 7.62958 5 7.00007V6.60857C5 5.91899 5.35524 5.27805 5.94 4.91257Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 4.5V7.17157C12 7.70201 12.2107 8.21071 12.5858 8.58579L15 11"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 19.5V16.8284C12 16.298 11.7893 15.7893 11.4142 15.4142L9 13"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="9"
+        cy="13"
+        r="1"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="15"
+        cy="11"
+        r="1"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }

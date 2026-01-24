@@ -182,11 +182,23 @@ function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
     () => getWindow()?.webContents.getZoomFactor() ?? 1,
   )
 
-  // DevTools
+  // DevTools - only allowed in dev mode or when unlocked
   ipcMain.handle("window:toggle-devtools", () => {
     const win = getWindow()
-    if (win) {
+    // Check if devtools are unlocked (or in dev mode)
+    const isUnlocked = !app.isPackaged || (global as any).__devToolsUnlocked
+    if (win && isUnlocked) {
       win.webContents.toggleDevTools()
+    }
+  })
+
+  // Unlock DevTools (hidden feature - 5 clicks on Beta tab)
+  ipcMain.handle("window:unlock-devtools", () => {
+    // Mark as unlocked locally for IPC check
+    ;(global as any).__devToolsUnlocked = true
+    // Call the global function to rebuild menu
+    if ((global as any).__unlockDevTools) {
+      ;(global as any).__unlockDevTools()
     }
   })
 
@@ -443,7 +455,10 @@ export function createMainWindow(): BrowserWindow {
     console.log("[Main] ✓ User authenticated, loading app")
     if (devServerUrl) {
       window.loadURL(devServerUrl)
-      window.webContents.openDevTools()
+      // Only open DevTools automatically in development
+      if (!app.isPackaged) {
+        window.webContents.openDevTools()
+      }
     } else {
       window.loadFile(join(__dirname, "../renderer/index.html"))
     }

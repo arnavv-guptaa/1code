@@ -52,10 +52,17 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
   initAutoUpdaterConfig()
 
   // Configure feed URL to point to R2 CDN
+  // Note: We use a custom request headers to bypass CDN cache
   autoUpdater.setFeedURL({
     provider: "generic",
     url: CDN_BASE,
   })
+
+  // Add cache-busting to update requests
+  autoUpdater.requestHeaders = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+  }
 
   // Event: Checking for updates
   autoUpdater.on("checking-for-update", () => {
@@ -132,13 +139,29 @@ export async function initAutoUpdater(getWindow: () => BrowserWindow | null) {
  */
 function registerIpcHandlers() {
   // Check for updates
-  ipcMain.handle("update:check", async () => {
+  ipcMain.handle("update:check", async (_event, force?: boolean) => {
     if (!app.isPackaged) {
       log.info("[AutoUpdater] Skipping update check in dev mode")
       return null
     }
     try {
+      // If force is true, add cache-busting timestamp to URL
+      if (force) {
+        const cacheBuster = `?t=${Date.now()}`
+        autoUpdater.setFeedURL({
+          provider: "generic",
+          url: `${CDN_BASE}${cacheBuster}`,
+        })
+        log.info("[AutoUpdater] Force check with cache-busting:", `${CDN_BASE}${cacheBuster}`)
+      }
       const result = await autoUpdater.checkForUpdates()
+      // Reset feed URL back to normal after force check
+      if (force) {
+        autoUpdater.setFeedURL({
+          provider: "generic",
+          url: CDN_BASE,
+        })
+      }
       return result?.updateInfo || null
     } catch (error) {
       log.error("[AutoUpdater] Check failed:", error)

@@ -240,7 +240,8 @@ export const AgentUserMessageBubble = memo(function AgentUserMessageBubble({
                 <div className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none bg-gradient-to-t from-[hsl(var(--input-background))] to-transparent rounded-b-xl" />
               )}
             </div>
-          ) : imageParts.length > 0 && textMentions.length === 0 ? (
+          ) : imageParts.length > 0 && textMentions.length === 0 && !skipTextMentionBlocks ? (
+            // Show "Using image" only when no text and images are rendered inline (not by parent)
             <div className="bg-input-background border px-3 py-2 rounded-xl text-sm text-muted-foreground italic">
               Using {imageParts.length === 1 ? "image" : `${imageParts.length} images`}
             </div>

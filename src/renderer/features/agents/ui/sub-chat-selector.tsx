@@ -59,7 +59,7 @@ interface SearchHistoryPopoverProps {
   sortedSubChats: SubChatMeta[]
   loadingSubChats: Map<string, string>
   subChatUnseenChanges: Set<string>
-  pendingQuestions: { subChatId: string } | null
+  pendingQuestionsMap: Map<string, { subChatId: string }>
   pendingPlanApprovals: Set<string>
   allSubChatsLength: number
   onSelect: (subChat: SubChatMeta) => void
@@ -73,7 +73,7 @@ const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHist
   sortedSubChats,
   loadingSubChats,
   subChatUnseenChanges,
-  pendingQuestions,
+  pendingQuestionsMap,
   pendingPlanApprovals,
   allSubChatsLength,
   onSelect,
@@ -90,7 +90,7 @@ const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHist
     const isLoading = loadingSubChats.has(subChat.id)
     const hasUnseen = subChatUnseenChanges.has(subChat.id)
     const mode = subChat.mode || "agent"
-    const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+    const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
     const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
 
     return (
@@ -122,7 +122,7 @@ const SearchHistoryPopover = memo(forwardRef<SearchHistoryPopoverRef, SearchHist
         </span>
       </div>
     )
-  }, [loadingSubChats, subChatUnseenChanges, pendingQuestions, pendingPlanApprovals])
+  }, [loadingSubChats, subChatUnseenChanges, pendingQuestionsMap, pendingPlanApprovals])
 
   return (
     <SearchCombobox
@@ -198,7 +198,7 @@ export function SubChatSelector({
   const [subChatsSidebarMode, setSubChatsSidebarMode] = useAtom(
     agentsSubChatsSidebarModeAtom,
   )
-  const pendingQuestions = useAtomValue(pendingUserQuestionsAtom)
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
 
   // Pending plan approvals from DB - only for open sub-chats
   const { data: pendingPlanApprovalsData } = trpc.chats.getPendingPlanApprovals.useQuery(
@@ -631,7 +631,7 @@ export function SubChatSelector({
                 // Get mode from sub-chat itself (defaults to "agent")
                 const mode = subChat.mode || "agent"
                 // Check if this chat is waiting for user answer
-                const hasPendingQuestion = pendingQuestions?.subChatId === subChat.id
+                const hasPendingQuestion = pendingQuestionsMap.has(subChat.id)
                 // Check if this chat has a pending plan approval
                 const hasPendingPlan = pendingPlanApprovals.has(subChat.id)
 
@@ -651,6 +651,21 @@ export function SubChatSelector({
                           e.preventDefault()
                           if (editingSubChatId !== subChat.id) {
                             onSwitch(subChat.id)
+                          }
+                        }}
+                        onMouseDown={(e) => {
+                          // Middle-click to close tab (like Chrome)
+                          if (e.button === 1 && openSubChats.length > 1) {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onCloseTab(subChat.id)
+                          }
+                        }}
+                        onAuxClick={(e) => {
+                          // Prevent context menu on middle-click
+                          if (e.button === 1) {
+                            e.preventDefault()
+                            e.stopPropagation()
                           }
                         }}
                         onDoubleClick={(e) => {
@@ -796,6 +811,7 @@ export function SubChatSelector({
                       visualIndex={index}
                       hasTabsToRight={hasTabsToRight}
                       canCloseOtherTabs={openSubChats.length > 2}
+                      chatId={parentChatId}
                     />
                   </ContextMenu>
                 )
@@ -843,7 +859,7 @@ export function SubChatSelector({
             sortedSubChats={sortedSubChats}
             loadingSubChats={loadingSubChats}
             subChatUnseenChanges={subChatUnseenChanges}
-            pendingQuestions={pendingQuestions}
+            pendingQuestionsMap={pendingQuestionsMap}
             pendingPlanApprovals={pendingPlanApprovals}
             allSubChatsLength={allSubChats.length}
             onSelect={handleSelectFromHistory}

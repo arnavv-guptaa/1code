@@ -429,8 +429,15 @@ export function extractTextMentions(text: string): {
     cleanedText = cleanedText.replace(mentionStr, "")
   }
 
-  // Clean up extra whitespace
-  cleanedText = cleanedText.trim().replace(/\s+/g, " ")
+  // Clean up extra whitespace but preserve newlines
+  // Only collapse multiple spaces (not newlines) into one space
+  // and trim leading/trailing whitespace from each line
+  cleanedText = cleanedText
+    .split("\n")
+    .map(line => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n") // Collapse 3+ newlines to 2
+    .trim()
 
   return { textMentions, cleanedText }
 }
