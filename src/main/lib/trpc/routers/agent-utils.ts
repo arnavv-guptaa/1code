@@ -41,47 +41,106 @@ export function parseAgentMd(
 ): Partial<ParsedAgent> {
   try {
     const { data, content: body } = matter(content)
-
-    // Parse tools - can be comma-separated string or array
-    let tools: string[] | undefined
-    if (typeof data.tools === "string") {
-      tools = data.tools
-        .split(",")
-        .map((t: string) => t.trim())
-        .filter(Boolean)
-    } else if (Array.isArray(data.tools)) {
-      tools = data.tools
-    }
-
-    // Parse disallowedTools
-    let disallowedTools: string[] | undefined
-    if (typeof data.disallowedTools === "string") {
-      disallowedTools = data.disallowedTools
-        .split(",")
-        .map((t: string) => t.trim())
-        .filter(Boolean)
-    } else if (Array.isArray(data.disallowedTools)) {
-      disallowedTools = data.disallowedTools
-    }
-
-    // Validate model
-    const model =
-      data.model && VALID_AGENT_MODELS.includes(data.model)
-        ? (data.model as AgentModel)
-        : undefined
-
-    return {
-      name:
-        typeof data.name === "string" ? data.name : filename.replace(".md", ""),
-      description: typeof data.description === "string" ? data.description : "",
-      prompt: body.trim(),
-      tools,
-      disallowedTools,
-      model,
-    }
+    return extractAgentFields(data, body, filename)
   } catch (err) {
+    // gray-matter fails on complex YAML (e.g. unquoted colons in descriptions)
+    // Fall back to regex-based frontmatter parsing
+    const fallback = parseFrontmatterFallback(content, filename)
+    if (fallback) return fallback
     console.error("[agents] Failed to parse markdown:", err)
     return {}
+  }
+}
+
+/**
+ * Fallback parser for when gray-matter fails on complex YAML values.
+ * Extracts frontmatter fields line-by-line, treating the last field value
+ * as everything from the key to the next key or end of frontmatter.
+ */
+function parseFrontmatterFallback(
+  content: string,
+  filename: string
+): Partial<ParsedAgent> | null {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  if (!fmMatch) return null
+
+  const frontmatterBlock = fmMatch[1]
+  const body = fmMatch[2]
+
+  // Parse frontmatter line by line, handling multi-content values
+  // by greedily consuming until the next known key
+  const knownKeys = ["name", "description", "tools", "disallowedTools", "model", "color"]
+  const fields: Record<string, string> = {}
+
+  const lines = frontmatterBlock.split("\n")
+  let currentKey = ""
+  let currentValue = ""
+
+  for (const line of lines) {
+    // Check if this line starts a new key
+    const keyMatch = line.match(/^(\w+):\s*(.*)$/)
+    if (keyMatch && knownKeys.includes(keyMatch[1])) {
+      // Save previous key-value
+      if (currentKey) {
+        fields[currentKey] = currentValue.trim()
+      }
+      currentKey = keyMatch[1]
+      currentValue = keyMatch[2]
+    } else if (currentKey) {
+      // Continuation of previous value
+      currentValue += "\n" + line
+    }
+  }
+  // Save last key-value
+  if (currentKey) {
+    fields[currentKey] = currentValue.trim()
+  }
+
+  const data: Record<string, unknown> = { ...fields }
+  return extractAgentFields(data, body, filename)
+}
+
+function extractAgentFields(
+  data: Record<string, unknown>,
+  body: string,
+  filename: string
+): Partial<ParsedAgent> {
+  // Parse tools - can be comma-separated string or array
+  let tools: string[] | undefined
+  if (typeof data.tools === "string") {
+    tools = data.tools
+      .split(",")
+      .map((t: string) => t.trim())
+      .filter(Boolean)
+  } else if (Array.isArray(data.tools)) {
+    tools = data.tools
+  }
+
+  // Parse disallowedTools
+  let disallowedTools: string[] | undefined
+  if (typeof data.disallowedTools === "string") {
+    disallowedTools = data.disallowedTools
+      .split(",")
+      .map((t: string) => t.trim())
+      .filter(Boolean)
+  } else if (Array.isArray(data.disallowedTools)) {
+    disallowedTools = data.disallowedTools
+  }
+
+  // Validate model
+  const model =
+    data.model && VALID_AGENT_MODELS.includes(data.model as AgentModel)
+      ? (data.model as AgentModel)
+      : undefined
+
+  return {
+    name:
+      typeof data.name === "string" ? data.name : filename.replace(".md", ""),
+    description: typeof data.description === "string" ? data.description : "",
+    prompt: body.trim(),
+    tools,
+    disallowedTools,
+    model,
   }
 }
 
