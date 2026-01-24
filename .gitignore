@@ -33,3 +33,6 @@ resources/bin/
 
 # Test data (local testing only)
 test-data/
+
+# Claude Code local config
+.claude/

@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld("desktopApi", {
   setTrafficLightVisibility: (visible: boolean) =>
     ipcRenderer.invoke("window:set-traffic-light-visibility", visible),
 
+  // Windows-specific: Frame preference (native vs frameless)
+  setWindowFramePreference: (useNativeFrame: boolean) =>
+    ipcRenderer.invoke("window:set-frame-preference", useNativeFrame),
+  getWindowFrameState: () => ipcRenderer.invoke("window:get-frame-state"),
+
   // Window events
   onFullscreenChange: (callback: (isFullscreen: boolean) => void) => {
     const handler = (_event: unknown, isFullscreen: boolean) => callback(isFullscreen)
@@ -107,6 +112,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
 
   // Native features
   setBadge: (count: number | null) => ipcRenderer.invoke("app:set-badge", count),
+  setBadgeIcon: (imageData: string | null) => ipcRenderer.invoke("app:set-badge-icon", imageData),
   showNotification: (options: { title: string; body: string }) =>
     ipcRenderer.invoke("app:show-notification", options),
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
@@ -201,6 +207,9 @@ export interface DesktopApi {
   windowToggleFullscreen: () => Promise<void>
   windowIsFullscreen: () => Promise<boolean>
   setTrafficLightVisibility: (visible: boolean) => Promise<void>
+  // Windows-specific frame preference
+  setWindowFramePreference: (useNativeFrame: boolean) => Promise<boolean>
+  getWindowFrameState: () => Promise<boolean>
   onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void
   onFocusChange: (callback: (isFocused: boolean) => void) => () => void
   zoomIn: () => Promise<void>
@@ -210,6 +219,7 @@ export interface DesktopApi {
   toggleDevTools: () => Promise<void>
   setAnalyticsOptOut: (optedOut: boolean) => Promise<void>
   setBadge: (count: number | null) => Promise<void>
+  setBadgeIcon: (imageData: string | null) => Promise<void>
   showNotification: (options: { title: string; body: string }) => Promise<void>
   openExternal: (url: string) => Promise<void>
   getApiBaseUrl: () => Promise<string>

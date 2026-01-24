@@ -1363,13 +1363,7 @@ export function LoadingDot({
 }) {
   return (
     <div className={`relative ${className || ""}`}>
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-      {/* Spinner - visible when loading */}
+      {/* Spinner - visible when loading. Uses global synchronized-spin keyframes from globals.css */}
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -1377,7 +1371,7 @@ export function LoadingDot({
           isLoading ? "opacity-100 scale-100" : "opacity-0 scale-50"
         }`}
         style={{
-          animation: isLoading ? 'spin 1s linear infinite' : undefined,
+          animation: isLoading ? 'synchronized-spin 1s linear infinite' : undefined,
         }}
       >
         <circle

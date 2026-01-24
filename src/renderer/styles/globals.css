@@ -143,6 +143,16 @@
   -webkit-app-region: no-drag;
 }
 
+/* Synchronized spinner animation - all spinners using this keyframes will rotate in sync */
+@keyframes synchronized-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Chroma gradient animation for special keywords */
 @keyframes chroma-slide {
   0% {

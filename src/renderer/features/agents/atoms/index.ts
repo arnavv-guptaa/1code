@@ -254,6 +254,17 @@ export const agentsChangesPanelCollapsedAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Diff view display mode - sidebar (side peek), center dialog, or fullscreen
+// Defined early because diffSidebarOpenAtomFamily depends on it
+export type DiffViewDisplayMode = "side-peek" | "center-peek" | "full-page"
+
+export const diffViewDisplayModeAtom = atomWithStorage<DiffViewDisplayMode>(
+  "agents:diffViewDisplayMode",
+  "side-peek", // default to current behavior
+  undefined,
+  { getOnInit: true },
+)
+
 // Diff sidebar open state storage - stores per chatId
 const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
   "agents:diffSidebarOpen",
@@ -263,9 +274,20 @@ const diffSidebarOpenStorageAtom = atomWithStorage<Record<string, boolean>>(
 )
 
 // atomFamily to get/set diff sidebar open state per chatId
+// Only restores open state when display mode is "side-peek" (sidebar mode)
+// For dialog/fullscreen modes, we don't auto-restore the open state
 export const diffSidebarOpenAtomFamily = atomFamily((chatId: string) =>
   atom(
-    (get) => get(diffSidebarOpenStorageAtom)[chatId] ?? false,
+    (get) => {
+      const displayMode = get(diffViewDisplayModeAtom)
+      const storedOpen = get(diffSidebarOpenStorageAtom)[chatId] ?? false
+      // Only restore open state for sidebar mode
+      // Dialog and fullscreen should not auto-open on page load
+      if (displayMode !== "side-peek") {
+        return false
+      }
+      return storedOpen
+    },
     (get, set, isOpen: boolean) => {
       const current = get(diffSidebarOpenStorageAtom)
       set(diffSidebarOpenStorageAtom, { ...current, [chatId]: isOpen })
@@ -522,19 +544,12 @@ export const pendingUserQuestionsAtom = atom<PendingUserQuestions | null>(null)
 // Set<subChatId>
 export const pendingPlanApprovalsAtom = atom<Set<string>>(new Set())
 
-// Diff view display mode - sidebar (side peek), center dialog, or fullscreen
-export type DiffViewDisplayMode = "side-peek" | "center-peek" | "full-page"
-
-export const diffViewDisplayModeAtom = atomWithStorage<DiffViewDisplayMode>(
-  "agents:diffViewDisplayMode",
-  "side-peek", // default to current behavior
-  undefined,
-  { getOnInit: true },
-)
-
 // Store AskUserQuestion results by toolUseId for real-time updates
 // Map<toolUseId, result>
 export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
+
+// Create-agent form visibility - set to true when /create-agent command is triggered
+export const showCreateAgentFormAtom = atom<boolean>(false)
 
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)

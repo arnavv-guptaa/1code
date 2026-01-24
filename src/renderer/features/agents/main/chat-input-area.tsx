@@ -2,14 +2,16 @@
 
 import { memo, useCallback, useRef, useState, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { useAtom, useAtomValue } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronDown, WifiOff } from "lucide-react"
 
 import { Button } from "../../../components/ui/button"
+import { Switch } from "../../../components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu"
 import {
@@ -26,7 +28,7 @@ import {
   PromptInputContextItems,
 } from "../../../components/ui/prompt-input"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom } from "../atoms"
+import { isPlanModeAtom, lastSelectedModelIdAtom, showCreateAgentFormAtom } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import {
@@ -47,6 +49,7 @@ import {
   saveSubChatDraftWithAttachments,
   clearSubChatDraft,
 } from "../lib/drafts"
+import { CLAUDE_MODELS } from "../lib/models"
 import { type SubChatFileChange } from "../atoms"
 import {
   customClaudeConfigAtom,
@@ -54,6 +57,7 @@ import {
   activeConfigAtom,
   autoOfflineModeAtom,
   showOfflineModeFeaturesAtom,
+  extendedThinkingEnabledAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 
@@ -64,10 +68,7 @@ function useAvailableModels() {
   })
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
 
-  const baseModels = [
-    { id: "sonnet", name: "Sonnet" },
-    { id: "opus", name: "Opus" },
-  ]
+  const baseModels = CLAUDE_MODELS
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
   const hasOllama = ollamaStatus?.ollama.available && !!ollamaStatus.ollama.recommendedModel
@@ -345,6 +346,14 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [slashSearchText, setSlashSearchText] = useState("")
   const [slashPosition, setSlashPosition] = useState({ top: 0, left: 0 })
 
+  // Colon trigger dropdown state (for agent mentions)
+  const [showColonDropdown, setShowColonDropdown] = useState(false)
+  const [colonSearchText, setColonSearchText] = useState("")
+  const [colonPosition, setColonPosition] = useState({ top: 0, left: 0 })
+
+  // Create-agent form trigger
+  const setShowCreateAgentForm = useSetAtom(showCreateAgentFormAtom)
+
   // Mode dropdown state
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
   const [modeTooltip, setModeTooltip] = useState<{
@@ -368,6 +377,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   const normalizedCustomClaudeConfig =
     normalizeCustomClaudeConfig(customClaudeConfig)
   const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
+
+  // Extended thinking (reasoning) toggle
+  const [thinkingEnabled, setThinkingEnabled] = useAtom(extendedThinkingEnabledAtom)
 
   // Auto-switch model based on network status (only if offline features enabled)
   useEffect(() => {
@@ -507,6 +519,12 @@ export const ChatInputArea = memo(function ChatInputArea({
     setShowingToolsList(false)
   }, [editorRef])
 
+  // Colon trigger select handler (agents only)
+  const handleColonMentionSelect = useCallback((mention: FileMentionOption) => {
+    editorRef.current?.insertColonMention(mention)
+    setShowColonDropdown(false)
+  }, [editorRef])
+
   // Slash command handlers
   const handleSlashTrigger = useCallback(
     ({ searchText, rect }: { searchText: string; rect: DOMRect }) => {
@@ -550,6 +568,10 @@ export const ChatInputArea = memo(function ChatInputArea({
             // Trigger context compaction
             onCompact()
             break
+          case "create-agent":
+            // Show the create-agent form
+            setShowCreateAgentForm(true)
+            break
           // Prompt-based commands - auto-send to agent
           case "review":
           case "pr-comments":
@@ -575,7 +597,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         setTimeout(() => onSend(), 0)
       }
     },
-    [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef],
+    [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
   )
 
   // Paste handler for images and plain text
@@ -712,13 +734,21 @@ export const ChatInputArea = memo(function ChatInputArea({
                     setShowingAgentsList(false)
                     setShowingToolsList(false)
                   }}
+                  onColonTrigger={({ searchText, rect }) => {
+                    setColonSearchText(searchText)
+                    setColonPosition({ top: rect.top, left: rect.left })
+                    setShowColonDropdown(true)
+                  }}
+                  onCloseColonTrigger={() => {
+                    setShowColonDropdown(false)
+                  }}
                   onSlashTrigger={handleSlashTrigger}
                   onCloseSlashTrigger={handleCloseSlashTrigger}
                   onContentChange={handleContentChange}
                   onSubmit={onSubmitWithQuestionAnswer || handleEditorSubmit}
                   onForceSubmit={onForceSend}
                   onShiftTab={() => setIsPlanMode((prev) => !prev)}
-                  placeholder={isStreaming ? "Add follow up" : "Plan, @ for context, / for commands"}
+                  placeholder={isStreaming ? "Add follow up" : "Plan, @ for context, : for agents, / for commands"}
                   className={cn(
                     "bg-transparent max-h-[200px] overflow-y-auto p-1",
                     isMobile && "min-h-[56px]",
@@ -974,6 +1004,18 @@ export const ChatInputArea = memo(function ChatInputArea({
                           </DropdownMenuItem>
                         )
                       })}
+                      <DropdownMenuSeparator />
+                      <div
+                        className="flex items-center justify-between px-2 py-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-sm">Thinking</span>
+                        <Switch
+                          checked={thinkingEnabled}
+                          onCheckedChange={setThinkingEnabled}
+                          className="scale-75"
+                        />
+                      </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1007,10 +1049,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     size="icon"
                     className="h-7 w-7 rounded-sm outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={
-                      isStreaming ||
-                      (images.length >= 5 && files.length >= 10)
-                    }
+                    disabled={images.length >= 5 && files.length >= 10}
                   >
                     <AttachIcon className="h-4 w-4" />
                   </Button>
@@ -1098,6 +1137,24 @@ export const ChatInputArea = memo(function ChatInputArea({
         showingSkillsList={showingSkillsList}
         showingAgentsList={showingAgentsList}
         showingToolsList={showingToolsList}
+      />
+
+      {/* Colon trigger dropdown (agents only) */}
+      <AgentsFileMention
+        isOpen={showColonDropdown}
+        onClose={() => setShowColonDropdown(false)}
+        onSelect={handleColonMentionSelect}
+        searchText={colonSearchText}
+        position={colonPosition}
+        teamId={teamId}
+        repository={repository}
+        sandboxId={sandboxId}
+        projectPath={projectPath}
+        changedFiles={[]}
+        showingFilesList={false}
+        showingSkillsList={false}
+        showingAgentsList={true}
+        showingToolsList={false}
       />
 
       {/* Slash command dropdown */}

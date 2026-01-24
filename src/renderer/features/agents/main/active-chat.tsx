@@ -119,6 +119,7 @@ import {
   pendingPrMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
+  showCreateAgentFormAtom,
   QUESTIONS_SKIPPED_MESSAGE,
   selectedAgentChatIdAtom,
   selectedCommitAtom,
@@ -179,6 +180,7 @@ import { AgentToolCall } from "../ui/agent-tool-call"
 import { AgentToolRegistry } from "../ui/agent-tool-registry"
 import { AgentUserMessageBubble } from "../ui/agent-user-message-bubble"
 import { AgentUserQuestion, type AgentUserQuestionHandle } from "../ui/agent-user-question"
+import { CreateAgentForm, type CreateAgentFormData } from "../ui/create-agent-form"
 import { AgentsHeaderControls } from "../ui/agents-header-controls"
 import { ChatTitleEditor } from "../ui/chat-title-editor"
 import { McpServersIndicator } from "../ui/mcp-servers-indicator"
@@ -284,13 +286,6 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08-4.778 2.758a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
   </svg>
 )
-
-// Model options for Claude Code
-const claudeModels = [
-  { id: "opus", name: "Opus" },
-  { id: "sonnet", name: "Sonnet" },
-  { id: "haiku", name: "Haiku" },
-]
 
 // Agent providers
 const agents = [
@@ -2300,12 +2295,14 @@ const ChatViewInner = memo(function ChatViewInner({
     if (isStreamingRef.current) {
       const item = createQueueItem(generateQueueId(), message)
       addToQueue(subChatId, item)
+      toast.success("Reply queued", { description: "Will be sent when current response completes" })
     } else {
       // Send directly
       sendMessageRef.current({
         role: "user",
         parts: [{ type: "text", text: message }],
       })
+      toast.success("Reply sent")
     }
 
     // Clear state and selection
@@ -2393,6 +2390,13 @@ const ChatViewInner = memo(function ChatViewInner({
   const [pendingQuestions, setPendingQuestions] = useAtom(
     pendingUserQuestionsAtom,
   )
+
+  // Create-agent form visibility
+  const [showCreateAgentForm, setShowCreateAgentForm] = useAtom(showCreateAgentFormAtom)
+
+  const handleCreateAgentCancel = useCallback(() => {
+    setShowCreateAgentForm(false)
+  }, [setShowCreateAgentForm])
 
   // Track whether chat input has content (for custom text with questions)
   const [inputHasContent, setInputHasContent] = useState(false)
@@ -3284,6 +3288,48 @@ const ChatViewInner = memo(function ChatViewInner({
     addToQueue,
   ])
 
+  // Handle create-agent form submission - constructs prompt and sends
+  const handleCreateAgentSubmit = useCallback(
+    (data: CreateAgentFormData) => {
+      setShowCreateAgentForm(false)
+
+      const toolsList = data.tools.length === 12
+        ? "all tools (inherit from parent)"
+        : data.tools.join(", ")
+
+      const modelStr = data.model === "inherit" ? "inherit (same as parent)" : data.model
+
+      const prompt = `Create a Claude Code custom agent with the following configuration:
+
+- **Name**: ${data.name}
+- **Scope**: ${data.scope === "project" ? "Project-level (save to .claude/agents/)" : "User-level (save to ~/.claude/agents/)"}
+- **Tools**: ${toolsList}
+- **Model**: ${modelStr}
+
+**Description of what the agent should do:**
+${data.description}
+
+Please create the agent markdown file with proper YAML frontmatter (name, description, tools, model) and a detailed system prompt based on the description above. Write the file to the correct location:
+${data.scope === "project" ? "`.claude/agents/" + data.name + ".md`" : "`~/.claude/agents/" + data.name + ".md`"}
+
+The file format should be:
+\`\`\`markdown
+---
+name: <agent-name>
+description: <when Claude should delegate to this agent>
+tools: <comma-separated tool list>
+model: <model>
+---
+
+<system prompt content here>
+\`\`\``
+
+      editorRef.current?.setValue(prompt)
+      setTimeout(() => handleSend(), 0)
+    },
+    [setShowCreateAgentForm, editorRef, handleSend],
+  )
+
   // Queue handlers for sending queued messages
   const handleSendFromQueue = useCallback(async (itemId: string) => {
     const item = popItemFromQueue(subChatId, itemId)
@@ -3802,8 +3848,21 @@ const ChatViewInner = memo(function ChatViewInner({
         </div>
       )}
 
+      {/* Create-agent form - shows in same position as AgentUserQuestion */}
+      {showCreateAgentForm && !(pendingQuestions?.subChatId === subChatId) && (
+        <div className="px-4 relative z-20">
+          <div className="w-full px-2 max-w-2xl mx-auto">
+            <CreateAgentForm
+              onSubmit={handleCreateAgentSubmit}
+              onCancel={handleCreateAgentCancel}
+              hasProjectPath={!!projectPath}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Stacked cards container - queue + status */}
-      {!(pendingQuestions?.subChatId === subChatId) &&
+      {!(pendingQuestions?.subChatId === subChatId) && !showCreateAgentForm &&
         (queue.length > 0 || changedFilesForSubChat.length > 0) && (
           <div className="px-2 -mb-6 relative z-10">
             <div className="w-full max-w-2xl mx-auto px-2">
@@ -5322,18 +5381,14 @@ Make sure to preserve all functionality from both branches when resolving confli
         e.preventDefault()
         e.stopPropagation()
 
-        // Toggle: close if open, open if has changes
-        if (isDiffSidebarOpen) {
-          setIsDiffSidebarOpen(false)
-        } else if (diffStats.hasChanges) {
-          setIsDiffSidebarOpen(true)
-        }
+        // Toggle diff sidebar
+        setIsDiffSidebarOpen(!isDiffSidebarOpen)
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true)
     return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [diffStats.hasChanges, isDiffSidebarOpen])
+  }, [isDiffSidebarOpen])
 
   // Keyboard shortcut: Cmd + B to toggle file tree sidebar
   useEffect(() => {

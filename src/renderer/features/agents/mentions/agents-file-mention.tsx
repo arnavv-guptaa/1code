@@ -736,9 +736,9 @@ function renderTooltipContent(option: FileMentionOption) {
 
   if (option.type === "skill" || option.type === "agent") {
     return (
-      <div className="flex flex-col gap-1.5 w-full overflow-hidden">
+      <div className="flex flex-col gap-1.5 w-full overflow-hidden max-w-[280px]">
         {option.description && (
-          <p className="text-xs text-muted-foreground break-words">
+          <p className="text-xs text-muted-foreground break-words line-clamp-3">
             {option.description}
           </p>
         )}
@@ -811,10 +811,13 @@ export const AgentsFileMention = memo(function AgentsFileMention({
   })
 
   // Fetch custom agents from filesystem (cached for 5 minutes)
-  const { data: customAgents = [], isFetching: isFetchingAgents } = trpc.agents.listEnabled.useQuery(undefined, {
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000, // 5 minutes - agents don't change frequently
-  })
+  const { data: customAgents = [], isFetching: isFetchingAgents } = trpc.agents.listEnabled.useQuery(
+    projectPath ? { cwd: projectPath } : undefined,
+    {
+      enabled: isOpen,
+      staleTime: 5 * 60 * 1000, // 5 minutes - agents don't change frequently
+    }
+  )
 
   // Debounce search text (300ms to match canvas implementation)
   useEffect(() => {
