@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useRef, useState, useEffect } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { ChevronDown, WifiOff, Zap } from "lucide-react"
@@ -38,7 +38,7 @@ import {
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { isPlanModeAtom, lastSelectedModelIdAtom, showCreateAgentFormAtom, type SubChatFileChange } from "../atoms"
+import { lastSelectedModelIdAtom, subChatModeAtomFamily, getNextMode, showCreateAgentFormAtom, type AgentMode, type SubChatFileChange } from "../atoms"
 import { AgentsSlashCommand, COMMAND_PROMPTS, type SlashCommandOption } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import type { UploadedFile, UploadedImage } from "../hooks/use-agents-file-upload"
@@ -426,8 +426,22 @@ export const ChatInputArea = memo(function ChatInputArea({
   // Note: When offline, we show Ollama models selector instead of Claude models
   // The selectedOllamaModel atom is used to track which Ollama model is selected
 
-  // Plan mode - global atom
-  const [isPlanMode, setIsPlanMode] = useAtom(isPlanModeAtom)
+  // Plan mode - per-subChat using atomFamily
+  const subChatModeAtom = useMemo(
+    () => subChatModeAtomFamily(subChatId),
+    [subChatId],
+  )
+  const [subChatMode, setSubChatMode] = useAtom(subChatModeAtom)
+
+  // Helper to update mode (atomFamily only - Zustand store removed)
+  const updateMode = useCallback((newMode: AgentMode) => {
+    setSubChatMode(newMode)
+  }, [setSubChatMode])
+
+  // Toggle mode helper
+  const toggleMode = useCallback(() => {
+    updateMode(getNextMode(subChatMode))
+  }, [subChatMode, updateMode])
 
   // Voice input state
   const {
@@ -525,17 +539,9 @@ export const ChatInputArea = memo(function ChatInputArea({
           .replace(/[\r\n\t]+/g, " ")
           .replace(/ +/g, " ")
           .trim()
-
-        console.log("[VoiceInput] Raw result.text:", JSON.stringify(result.text))
-        console.log("[VoiceInput] Cleaned transcribed:", JSON.stringify(transcribed))
-        console.log("[VoiceInput] Current editor value:", JSON.stringify(current))
-
         // Add space separator only if current text exists and doesn't end with whitespace
         const needsSpace = current.length > 0 && !/\s$/.test(current)
         const newValue = current + (needsSpace ? " " : "") + transcribed
-
-        console.log("[VoiceInput] Final newValue:", JSON.stringify(newValue))
-
         editorRef.current?.setValue(newValue)
         editorRef.current?.focus()
       }
@@ -774,13 +780,13 @@ export const ChatInputArea = memo(function ChatInputArea({
             }
             return
           case "plan":
-            if (!isPlanMode) {
-              setIsPlanMode(true)
+            if (subChatMode !== "plan") {
+              updateMode("plan")
             }
             return
           case "agent":
-            if (isPlanMode) {
-              setIsPlanMode(false)
+            if (subChatMode === "plan") {
+              updateMode("agent")
             }
             return
           case "compact":
@@ -813,7 +819,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       // insert the command and let user add arguments or press Enter to send
       editorRef.current?.setValue(`/${command.name} `)
     },
-    [isPlanMode, setIsPlanMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
+    [subChatMode, updateMode, onSend, onCreateNewSubChat, onCompact, editorRef, setShowCreateAgentForm],
   )
 
   // Paste handler for images, plain text, and large text (saved as files)
@@ -1085,8 +1091,8 @@ export const ChatInputArea = memo(function ChatInputArea({
                   onContentChange={handleContentChange}
                   onSubmit={onSubmitWithQuestionAnswer || handleEditorSubmit}
                   onForceSubmit={onForceSend}
-                  onShiftTab={() => setIsPlanMode((prev) => !prev)}
-                  placeholder={isStreaming ? "Add follow up" : "Plan, @ for context, : for agents, / for commands"}
+                  onShiftTab={toggleMode}
+                  placeholder={isStreaming ? "Add to the queue" : "Plan, @ for context, : for agents, / for commands"}
                   className={cn(
                     "bg-transparent max-h-[200px] overflow-y-auto p-1",
                     isMobile && "min-h-[56px]",
@@ -1115,12 +1121,12 @@ export const ChatInputArea = memo(function ChatInputArea({
                   >
                     <DropdownMenuTrigger asChild>
                       <button className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70">
-                        {isPlanMode ? (
+                        {subChatMode === "plan" ? (
                           <PlanIcon className="h-3.5 w-3.5 shrink-0" />
                         ) : (
                           <AgentIcon className="h-3.5 w-3.5 shrink-0" />
                         )}
-                        <span className="truncate">{isPlanMode ? "Plan" : "Agent"}</span>
+                        <span className="truncate">{subChatMode === "plan" ? "Plan" : "Agent"}</span>
                         <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                       </button>
                     </DropdownMenuTrigger>
@@ -1138,7 +1144,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                             tooltipTimeoutRef.current = null
                           }
                           setModeTooltip(null)
-                          setIsPlanMode(false)
+                          updateMode("agent")
                           setModeDropdownOpen(false)
                         }}
                         className="justify-between gap-2"
@@ -1181,7 +1187,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           <AgentIcon className="w-4 h-4 text-muted-foreground" />
                           <span>Agent</span>
                         </div>
-                        {!isPlanMode && (
+                        {subChatMode !== "plan" && (
                           <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
                         )}
                       </DropdownMenuItem>
@@ -1193,7 +1199,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                             tooltipTimeoutRef.current = null
                           }
                           setModeTooltip(null)
-                          setIsPlanMode(true)
+                          updateMode("plan")
                           setModeDropdownOpen(false)
                         }}
                         className="justify-between gap-2"
@@ -1236,7 +1242,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           <PlanIcon className="w-4 h-4 text-muted-foreground" />
                           <span>Plan</span>
                         </div>
-                        {isPlanMode && (
+                        {subChatMode === "plan" && (
                           <CheckIcon className="h-3.5 w-3.5 ml-auto shrink-0" />
                         )}
                       </DropdownMenuItem>
@@ -1456,7 +1462,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                         }
                       }}
                       onStop={onStop}
-                      isPlanMode={isPlanMode}
+                      mode={subChatMode}
                       // Voice input props - show mic when input is empty and voice is available
                       showVoiceInput={isVoiceAvailable}
                       isRecording={isVoiceRecording}
@@ -1529,7 +1535,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         searchText={slashSearchText}
         position={slashPosition}
         projectPath={projectPath}
-        isPlanMode={isPlanMode}
+        mode={subChatMode}
       />
     </div>
   )
