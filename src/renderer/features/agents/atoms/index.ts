@@ -635,11 +635,11 @@ export const lastSelectedBranchesAtom = atomWithStorage<
 
 // Compacting status per sub-chat
 // Set<subChatId> - subChats currently being compacted
-export const compactingSubChatsAtom = atom<Set<string>>(new Set())
+export const compactingSubChatsAtom = atom<Set<string>>(new Set<string>())
 
 // Track IDs of chats/subchats created in this browser session (NOT persisted - resets on reload)
 // Used to determine whether to show placeholder + typewriter effect
-export const justCreatedIdsAtom = atom<Set<string>>(new Set())
+export const justCreatedIdsAtom = atom<Set<string>>(new Set<string>())
 
 // Pending user questions from AskUserQuestion tool
 // Set when Claude requests user input, cleared when answered or skipped
@@ -761,7 +761,7 @@ export const selectedFilePathAtomFamily = atomFamily((projectId: string) =>
 
 // Multi-selection: set of selected file paths
 export const selectedFilePathsAtomFamily = atomFamily((projectId: string) =>
-  atom<Set<string>>(new Set()),
+  atom<Set<string>>(new Set<string>()),
 )
 
 // File clipboard state for cut/copy operations
@@ -1078,22 +1078,6 @@ export type FileViewerDisplayMode = "side-peek" | "center-peek" | "full-page"
 export const fileViewerDisplayModeAtom = atomWithStorage<FileViewerDisplayMode>(
   "agents:fileViewerDisplayMode",
   "side-peek",
-  undefined,
-  { getOnInit: true },
-)
-
-// File viewer sidebar width (persisted)
-export const fileViewerSidebarWidthAtom = atomWithStorage<number>(
-  "agents:fileViewerSidebarWidth",
-  500,
-  undefined,
-  { getOnInit: true },
-)
-
-// File viewer word wrap preference (persisted)
-export const fileViewerWordWrapAtom = atomWithStorage<boolean>(
-  "agents:fileViewerWordWrap",
-  false,
   undefined,
   { getOnInit: true },
 )
